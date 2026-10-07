@@ -1,0 +1,29 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Java / Gradle / Maven
+.gradle/
+build/
+out/
+target/
+*.class
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local imported content and generated assets
+data/
+uploads/
+local-rules/
+audio/
+logs/
+*.log
+
