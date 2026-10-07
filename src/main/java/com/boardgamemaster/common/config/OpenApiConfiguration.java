@@ -12,6 +12,6 @@ public class OpenApiConfiguration {
         return new OpenAPI().info(new Info()
                 .title("Board Game Master API")
                 .version("v1")
-                .description("Multi-game platform. Milestone 0 supplies infrastructure only; game APIs are not implemented."));
+                .description("Multi-game platform. Game and supported-version metadata APIs are implemented; rules, sessions, and AI are planned."));
     }
 }

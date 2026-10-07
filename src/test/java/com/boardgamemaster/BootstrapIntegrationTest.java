@@ -45,14 +45,14 @@ class BootstrapIntegrationTest {
 
     @Test
     void migrationInstallsUsableVectorsAndIsRepeatable() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("3");
         assertThat(jdbc.queryForObject("SELECT extversion FROM pg_extension WHERE extname = 'vector'",
                 String.class)).isNotBlank();
         assertThat(jdbc.queryForObject("SELECT '[1,2,3]'::vector <-> '[1,2,3]'::vector", Double.class))
                 .isZero();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForList("SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
-                String.class)).containsExactly("flyway_schema_history");
+                String.class)).containsExactlyInAnyOrder("flyway_schema_history", "games", "game_versions");
     }
 
     @Test
@@ -70,11 +70,11 @@ class BootstrapIntegrationTest {
 
     @Test
     void missingResourceReturnsSafeConsistentError() throws Exception {
-        var response = get("/api/v1/games");
+        var response = get("/api/v1/not-implemented");
         assertThat(response.statusCode()).isEqualTo(404);
         var error = mapper.readTree(response.body());
         assertThat(error.path("code").asText()).isEqualTo("NOT_FOUND");
-        assertThat(error.path("path").asText()).isEqualTo("/api/v1/games");
+        assertThat(error.path("path").asText()).isEqualTo("/api/v1/not-implemented");
         assertThat(error.path("timestamp").asText()).isNotBlank();
         assertThat(error.has("trace")).isFalse();
     }

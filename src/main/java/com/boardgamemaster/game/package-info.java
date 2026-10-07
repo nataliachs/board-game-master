@@ -1,2 +1,2 @@
-/** Reserved feature boundary; implementation belongs to a later milestone. */
+/** Generic game metadata and supported ruleset catalog. */
 package com.boardgamemaster.game;
