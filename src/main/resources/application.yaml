@@ -41,3 +41,9 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+boardgame:
+  rules:
+    chunk-size: ${RULE_CHUNK_SIZE:1200}
+    chunk-overlap: ${RULE_CHUNK_OVERLAP:200}
+    max-bytes: ${RULE_MAX_BYTES:1048576}
+    max-chunks: ${RULE_MAX_CHUNKS:10000}

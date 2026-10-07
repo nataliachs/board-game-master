@@ -1,134 +1,260 @@
 # Board Game Master — Project Specification
 
-Authoritative master specification. Latest multi-game revisions supersede the earlier Catan-only model. This repository starts with documentation and an empty source skeleton; no milestone is implemented.
+Authoritative product and architecture specification. The teaching-first requirements below supersede earlier mode-based customer flows. Implementation progress and validation are tracked in docs/DEVELOPMENT_STATUS.md; planned behavior here is not a claim that it is already implemented.
 
-# 1. PRODUCT GOAL
+# 1. PRODUCT GOAL AND CUSTOMER JOURNEY
 
-The system must be designed as a **multi-game board game platform from the beginning**.
+## CORE PRODUCT EXPERIENCE
 
-The first fully supported game for development and testing will be **Catan**, but the architecture must not contain Catan-specific assumptions in shared application logic.
+Board Game Master is an AI-powered board game assistant designed to teach customers how to play a selected board game and remain available while they play.
 
-Adding a second game in the future should primarily involve:
+The system must be designed as a multi-game platform.
 
-- creating the game's metadata
-- importing its rule documents
-- configuring its supported editions/versions
-- defining its teaching content
-- defining its setup flow
-- adding evaluation/test cases
+Catan is the first supported reference implementation, but shared application architecture must not contain Catan-specific assumptions.
 
-Adding another game should **not require redesigning the RAG pipeline, session system, conversation system, or core backend architecture**.
+The core product principle is:
 
-For the initial MVP, Catan is used as the reference implementation proving that the generic platform works.
+> A Game Master that teaches you the game and then stays with you while you play.
 
-A customer should eventually be able to:
+The product should NOT feel like:
 
-1. Select a supported board game.
+> A chatbot where the customer must already understand the game well enough to know what questions to ask.
+
+A customer who has never played the selected game should be able to:
+
+1. Select a game.
 2. Specify the number of players.
-3. Choose a mode:
-   - Quick Start
-   - Learn Game
-   - Ask Rules
-4. Start a game session.
-5. Ask natural-language questions about the game.
-6. Receive answers grounded in the correct rule documents.
-7. Ask follow-up questions while maintaining conversation context.
-8. Follow guided setup instructions.
-9. Later, interact with the same system through voice.
+3. Start a Game Master session.
+4. Learn the objective of the game.
+5. Learn the important components.
+6. Be guided through physical setup.
+7. Learn the core gameplay rules.
+8. Learn how a normal turn works.
+9. Learn important/common situations.
+10. Be told when they are ready to begin playing.
+11. Start playing.
+12. Ask questions whenever necessary.
+13. Receive answers grounded in verified game rules.
+14. Continue the game without losing session context.
+
+## DEFAULT CUSTOMER JOURNEY
+
+The default experience must follow this general flow:
+
+Game Selection
+
+↓
+
+Player Count
+
+↓
+
+Teaching Depth
+
+↓
+
+Create Game Session
+
+↓
+
+Game Introduction
+
+↓
+
+Game Objective
+
+↓
+
+Important Components
+
+↓
+
+Guided Physical Setup
+
+↓
+
+Core Gameplay Rules
+
+↓
+
+Turn Structure
+
+↓
+
+Important / Common Rules
+
+↓
+
+Ready to Play
+
+↓
+
+In-Game Rule Q&A
+
+↓
+
+Game Completed
+
+Customers must also be allowed to ask clarification questions while teaching is in progress.
 
 For example:
 
-Customer selects:
+Game Master:
+
+"Settlements next to a terrain hex receive resources when that terrain's number is rolled."
+
+Customer:
+
+"Does a city get the same amount?"
+
+The Game Master should:
+
+1. temporarily answer the question
+2. retrieve supporting rule information using RAG
+3. answer the customer clearly
+4. preserve teaching progress
+5. return to the current lesson afterward
+
+The customer should not lose their place in the teaching flow because they asked a question.
+
+## GAME SELECTION AND VERSION RESOLUTION
+
+Customers normally select only the logical board game.
+
+For example:
 
 Catan
 
-Player count:
+The customer should not normally need to select:
 
-4
+- edition
+- rules version
+- document version
+- language-specific rule set
 
-Mode:
+The backend must resolve the correct GameVersion.
 
-Quick Start
+Conceptually:
 
-Then asks:
-
-"Can I trade after building?"
-
-The backend must:
-
-1. determine which game/rule set belongs to the session
-2. retrieve relevant rules
-3. provide those rules to the LLM
-4. generate a grounded answer
-5. return source references
-
-The customer should **not normally be required to manually choose an edition/version**.
-
-Edition/version information belongs primarily to the game's backend configuration.
-
-For example, internally the system may know:
-
-Game:
-Catan
-
-Edition:
-5th Edition
-
-Language:
-English
-
-Rules Version:
-2025
-
-The customer simply sees:
+Game
 
 Catan
 
-The backend then automatically searches the appropriate rule set.
+↓
 
-If multiple editions of the same game are intentionally made available later, the application may expose an edition selector, but edition selection must not be required for the initial customer experience.
+GameVersion
 
----
+Catan / 5th Edition / English
 
+The session should store the resolved GameVersion so the rule set remains stable throughout the session.
 
-The first supported game should be **Catan**.
+If multiple versions eventually need to be exposed to the customer, an edition/version selector may be introduced later.
 
-A user should eventually be able to do something like:
+It is not required for the initial customer experience.
 
-1. Start a game session.
-2. Select Catan and its edition.
-3. Specify number of players.
-4. Choose a mode:
-   - Quick Start
-   - Learn Game
-   - Ask Rules
-5. Ask:
+## TEACHING DEPTH
 
-   "Can I trade after building?"
+Instead of making customers choose between separate modes such as QUICK_START, LEARN, and ASK_RULES, the normal experience should always be a Game Master session.
 
-6. The backend searches the relevant rule documents using RAG.
-7. The LLM answers using retrieved rules rather than relying only on model knowledge.
-8. The response contains citations or references to the source rule sections.
-9. Follow-up questions preserve conversational context.
+The user may optionally choose how deeply the game should be explained.
 
-Example:
+Use:
 
-User:
-"How do I get resources?"
+QUICK
 
-Assistant:
-Explains resource production.
+STANDARD
 
-User:
-"What if the robber is there?"
+DETAILED
 
-The assistant should understand what "there" refers to because the session maintains conversation context.
+### QUICK
 
-The application should also support step-by-step guided game setup.
+Teach only what players need to begin playing.
 
-Later in Phase 5, voice input and output should be added.
+Situational rules may be introduced later when they occur.
 
----
+This should minimize time before gameplay begins.
+
+### STANDARD
+
+Default café experience.
+
+Teach:
+
+- game theme/introduction
+- objective
+- important components
+- setup
+- core mechanics
+- normal turn structure
+- important commonly encountered rules
+- winning condition
+
+STANDARD should be the default.
+
+### DETAILED
+
+Provide a more thorough explanation before play begins.
+
+This may include:
+
+- additional examples
+- less common rules
+- more detailed strategic/contextual explanations
+- additional edge cases
+
+Rule Q&A remains available in all teaching depths.
+
+## SESSION STAGES
+
+A GameSession should progress through explicit application-managed stages.
+
+Suggested SessionStage values:
+
+TEACHING
+
+SETUP
+
+PLAYING
+
+COMPLETED
+
+Optional future states may include:
+
+CANCELLED
+
+PAUSED
+
+Do not depend on the LLM to determine what stage the customer is currently in.
+
+The backend must persist session state.
+
+Conceptually:
+
+SESSION_CREATED
+
+↓
+
+TEACHING
+
+↓
+
+SETUP
+
+↓
+
+TEACHING
+
+↓
+
+PLAYING
+
+↓
+
+COMPLETED
+
+Setup may occur in the middle of the teaching sequence.
+
+After setup is complete, teaching should resume from the correct lesson.
 
 # 2. ENGINEERING PRIORITIES
 
@@ -190,12 +316,17 @@ Voice:
 - Speech-to-Text provider abstraction
 - Text-to-Speech provider abstraction
 
+Demo UI (Phase 5 / Milestone 8):
+
+- Spring Boot + Thymeleaf, HTML, CSS and minimal JavaScript
+- No separate frontend project or React/Vue/Angular unless technically justified
+- Thin UI reusing backend application services
+
 The platform must remain game-independent at the infrastructure level.
 
-RAG, sessions, conversations, voice, document ingestion, and retrieval must work generically for any supported game.
+RAG, sessions, conversations, teaching, setup, voice, document ingestion, and retrieval must work generically for any supported game.
 
 ---
-
 
 Backend:
 
@@ -231,6 +362,12 @@ Voice:
 
 - Speech-to-Text provider abstraction
 - Text-to-Speech provider abstraction
+
+Demo UI (Phase 5 / Milestone 8):
+
+- Spring Boot + Thymeleaf, HTML, CSS and minimal JavaScript
+- No separate frontend project or React/Vue/Angular unless technically justified
+- Thin UI reusing backend application services
 
 Infrastructure:
 
@@ -458,209 +595,190 @@ However, avoid a schema that assumes every session contains only one immutable b
 
 ---
 
-### GameSession
+## UPDATED GAME SESSION MODEL
 
-Represents one customer/table play session.
-
-Possible fields:
+GameSession should support concepts such as:
 
 - id
 - gameId
 - gameVersionId
 - playerCount
-- mode
-- status
+- teachingDepth
+- sessionStage
+- currentTeachingSection
 - currentSetupStep
+- status
 - createdAt
 - endedAt
 
-The customer may provide only:
+The client should normally provide:
 
 - gameId
 - playerCount
-- mode
+- teachingDepth
 
-The application should resolve the correct GameVersion automatically when there is one configured default version.
+The backend resolves:
 
-Do not make the customer provide `gameVersionId` unless multiple versions need to be explicitly distinguished.
+- gameVersionId
 
-Modes:
+Example session creation request:
 
-- QUICK_START
-- LEARN
-- ASK_RULES
+{
+  "gameId": "...",
+  "playerCount": 4,
+  "teachingDepth": "STANDARD"
+}
 
----
+The application then resolves the default active GameVersion.
+Use teachingDepth QUICK / STANDARD / DETAILED, defaulting to STANDARD. SessionStage is
+TEACHING / SETUP / PLAYING / COMPLETED; optional CANCELLED and PAUSED may be added later.
+Session lifecycle status and workflow stage have separate responsibilities. Teaching and setup
+progress must be persisted explicitly, including the return position when setup interrupts a lesson.
+Changing the catalog default must never repin an existing session's GameVersion.
 
+### TeachingFlow
 
-Design the domain carefully before writing endpoints.
+A version-bound TeachingFlow owns ordered TeachingSections. The structure and teaching-depth
+applicability are application-managed data, not generated anew by an LLM for each session.
 
-At minimum, consider these concepts.
+## TEACHING SECTION MODEL
 
-## Game
-
-Fields should include concepts such as:
-
-- id
-- slug
-- name
-- publisher
-- edition
-- minPlayers
-- maxPlayers
-- estimatedDurationMinutes
-- description
-- active
-
-Do not assume that two editions of a game always share identical rules.
-
----
-
-## RuleDocument
-
-Represents an imported source document.
-
-Possible fields:
+A TeachingSection may contain:
 
 - id
-- gameId
-- name
-- sourceType
-- edition
-- version
-- language
-- sourceReference
-- importedAt
-
-Examples of sourceType:
-
-- RULEBOOK
-- FAQ
-- ERRATA
-- EXPANSION
-
----
-
-## RuleChunk
-
-Represents a searchable portion of a rule document.
-
-Possible data:
-
-- id
-- documentId
-- gameId
-- content
-- sectionTitle
-- pageNumber
-- chunkIndex
-- embedding
-- metadata
-
-Chunks must preserve enough source metadata to create citations.
-
----
-
-## GameSession
-
-Represents one table/customer game session.
-
-Possible fields:
-
-- id
-- gameId
-- edition
-- playerCount
-- mode
-- status
-- currentSetupStep
-- createdAt
-- endedAt
-
-Modes:
-
-- QUICK_START
-- LEARN
-- ASK_RULES
-
-Status could include:
-
-- ACTIVE
-- COMPLETED
-- CANCELLED
-
----
-
-## ConversationMessage
-
-Store session conversation history.
-
-Fields may include:
-
-- id
-- sessionId
-- role
-- content
-- timestamp
-
-Roles:
-
-- USER
-- ASSISTANT
-- SYSTEM
-
-Do not blindly send the entire conversation history to the LLM forever.
-
-Design a context strategy that can later support summarization or bounded history.
-
----
-
-## SetupFlow
-
-A game's setup must be represented as structured application data rather than one giant AI-generated paragraph.
-
-A setup flow should contain ordered steps.
-
-For example:
-
-SETUP_STARTED
-
-BOARD_CREATED
-
-NUMBER_TOKENS_PLACED
-
-PLAYER_COLORS_SELECTED
-
-INITIAL_SETTLEMENTS_PLACED
-
-GAME_READY
-
-Each setup step should have:
-
-- id or key
+- teachingFlowId
+- key
 - order
 - title
-- instructions
-- optional notes
-- completion status for the session
+- explanation
+- teachingDepth applicability
+- optional examples
+- optional tips
+- optional references
+- optional setupTrigger
+- active
 
-The API must support:
+Example:
 
-- current setup step
-- complete current step
-- previous step
-- next step
-- restart setup
+{
+  "key": "OBJECTIVE",
+  "order": 2,
+  "title": "How to Win",
+  "explanation": "The first player to reach 10 victory points wins the game."
+}
 
----
+Teaching progress must be stored in the GameSession.
+
+Do not rely on the LLM's conversation history to determine what comes next.
 
 ### ConversationMessage
-Persist id, sessionId, role (USER/ASSISTANT/SYSTEM), content, and timestamp. Use bounded recent history with a future summarization boundary; never send unlimited history.
 
-### SetupFlow and SetupStep
-Bind setup flows to GameVersion. Store ordered steps with key, order, title, instructions, and optional notes. Persist per-session completion and current step. Support current, complete, next, previous, and restart. Teaching sections are game/version data, not shared Catan logic.
+Persist id, sessionId, role (USER/ASSISTANT/SYSTEM), content, and timestamp. Keep bounded
+recent context behind SessionContextService, with a future summarization boundary.
+Conversation messages must not replace persisted teaching/setup progress.
+
+## SETUP FLOW
+
+Conceptually:
+
+GameVersion
+
+↓
+
+SetupFlow
+
+↓
+
+SetupSteps
+
+A SetupStep may contain:
+
+- id
+- setupFlowId
+- key
+- order
+- title
+- instruction
+- optional notes
+- optional warnings
+
+The session stores which setup step is currently active.
+
+The API should support:
+
+- start setup
+- get current step
+- next step
+- previous step
+- repeat step
+- restart setup
+- complete setup
+
+When SetupFlow completes, TeachingFlow should resume at the correct section.
 
 # 6. RAG DESIGN
+
+## Session-aware answering flow
+
+The rule answering pipeline should conceptually be:
+
+Customer Question
+
+↓
+
+Load GameSession
+
+↓
+
+Determine GameVersion
+
+↓
+
+Create Query Embedding
+
+↓
+
+Search Relevant RuleChunks
+
+↓
+
+Filter by GameVersion
+
+↓
+
+Apply expansion filters if relevant
+
+↓
+
+Rank / rerank results
+
+↓
+
+Evaluate retrieval confidence
+
+↓
+
+Provide evidence + question + conversation context to LLM
+
+↓
+
+Generate grounded answer
+
+↓
+
+Return answer + citations
+
+RAG infrastructure must remain generic for all games.
+
+Do not implement:
+
+if game == CATAN
+
+inside shared RAG infrastructure.
+
+This session-aware flow applies from Milestone 6 onward. Milestone 4 first exposes grounded
+questions using a selected Game and resolved default GameVersion, without implementing
+sessions early. TeachingFlow determines lesson order; retrieval supplies rule evidence.
 
 RAG is one of the core engineering features of this project.
 
@@ -719,7 +837,6 @@ RuleKnowledgeService
 Do not expose pgvector-specific implementation throughout the application.
 
 ---
-
 
 RAG is one of the core engineering features of this project.
 
@@ -879,7 +996,6 @@ without implementing a new ingestion pipeline.
 
 ---
 
-
 Create a document ingestion pipeline.
 
 The ingestion pipeline should conceptually perform:
@@ -926,7 +1042,11 @@ Instead, provide:
 
 ---
 
-# 10. PHASE 1 — BASIC RULE Q&A
+# 10. PHASE 1 — BASIC RULE KNOWLEDGE
+
+Goal: generic rule ingestion, semantic retrieval and grounded answers using Game, GameVersion,
+RuleDocument and RuleChunk. Catan is the first permitted reference dataset. This phase proves
+question → relevant rule retrieval → grounded answer; the full teaching experience arrives later.
 
 Implement the generic platform first and use Catan as the first supported game.
 
@@ -977,7 +1097,6 @@ The API should not require customers to specify an edition when a default suppor
 
 ---
 
-
 Implement this first.
 
 Goal:
@@ -1026,408 +1145,791 @@ Do not proceed to later phases until this works reliably.
 
 # 11. PHASE 2 — PRODUCTION-QUALITY RAG
 
-Improve retrieval.
-
-Add:
+Improve:
 
 - GameVersion filtering
-- document-type metadata
+- metadata filtering
+- document types
 - language metadata
-- optional expansion filtering
-- configurable top-K retrieval
-- configurable similarity threshold
-- duplicate chunk suppression
-- ranking/reranking abstraction
+- configurable top-K
+- similarity threshold
+- duplicate suppression
+- reranking abstraction
+- confidence calculation
+- evaluation datasets
+- retrieval tests
 - low-confidence fallback
-- citations
 
-Do not assume GameVersion filtering means customers manually select editions.
+Retrieval must be testable independently from generation.
 
-GameVersion is primarily an internal mechanism used to ensure that questions are answered using the correct rules.
+Use version-scoped filtering and retain document/language metadata; optional expansion
+filtering must remain possible. Version filtering does not require a customer edition selector.
+Provide automated evaluation data (for example src/test/resources/evaluation/catan-rule-questions.json)
+with questions, expectedTopics and mustRetrieveSection. Diagnose retrieval separately from
+prompt generation and LLM response; do not test the whole system exclusively through an LLM.
 
----
+# 12. PHASE 3 — GAME SESSIONS, TEACHING FLOW AND CONVERSATION
 
+Phase 3 introduces the actual Game Master experience.
 
-Improve retrieval.
+Implement:
 
-Add:
+- GameSession
+- ConversationMessage
+- TeachingFlow
+- TeachingSection
+- teaching progress
+- teachingDepth
+- SessionStage
+- session context
+- questions during lessons
 
-- edition filtering
-- document type metadata
-- language metadata
-- optional expansion filtering
-- configurable top-K retrieval
-- configurable similarity threshold
-- duplicate chunk suppression
-- ranking/reranking abstraction
-- low-confidence fallback
-- citations
+The customer must be able to:
 
-Create automated evaluation data.
+1. create a session
+2. begin teaching
+3. receive the first lesson
+4. continue to the next lesson
+5. move backward
+6. repeat a lesson
+7. ask a question while learning
+8. receive a RAG-grounded answer
+9. resume teaching from the same location
+10. complete teaching sections
+11. transition eventually toward gameplay
 
-For example:
+Phase 3 should not yet depend on voice.
 
-src/test/resources/evaluation/catan-rule-questions.json
+Text interactions must work first.
 
-Each case should contain something conceptually like:
+## CONVERSATION CONTEXT
 
-{
-  "question": "...",
-  "expectedTopics": ["robber"],
-  "mustRetrieveSection": "Robber"
-}
-
-Create tests around retrieval independently from generation whenever possible.
-
-The goal is to know whether failures originate from:
-
-- retrieval
-- prompt generation
-- LLM response
-
-Do not test everything exclusively through the LLM.
-
----
-
-# 12. PHASE 3 — GAME SESSIONS AND CONVERSATION
-
-Add:
-
-POST /api/v1/sessions
-
-Example customer request:
-
-{
-  "gameId": "...",
-  "playerCount": 4,
-  "mode": "QUICK_START"
-}
-
-The client should not normally need to send:
-
-gameVersionId
-
-The Session creation service should:
-
-1. load the selected Game
-2. identify its default supported GameVersion
-3. create the session using that GameVersion
-4. store it so all later RAG requests use the same ruleset
-
-Internally the resulting session may contain:
-
-Game:
-Catan
-
-GameVersion:
-5th Edition / English
-
-Players:
-4
-
-Mode:
-QUICK_START
-
-The customer only needed to select:
-
-Catan
-
-Then add:
-
-POST /api/v1/sessions/{sessionId}/messages
-
-{
-  "message": "How do I get resources?"
-}
-
-Followed by:
-
-{
-  "message": "What if the robber is there?"
-}
-
-The second question should use the existing session's:
-
-- game
-- resolved GameVersion
-- player count
-- mode
-- conversation context
-
-The version must remain stable throughout the session.
-
----
-
-
-Add:
-
-POST /api/v1/sessions
+Conversation context must be maintained for the active session.
 
 Example:
 
-{
-  "gameId": "...",
-  "playerCount": 4,
-  "mode": "QUICK_START"
-}
+Customer:
 
-Response returns session ID.
+"How do I get resources?"
 
-Add:
+Game Master answers.
 
-POST /api/v1/sessions/{sessionId}/messages
+Customer:
 
-{
-  "message": "How do I get resources?"
-}
+"What if the robber is there?"
 
-Then:
+The system should understand that the second question refers to the previous topic.
 
-{
-  "message": "What if the robber is there?"
-}
+Persist ConversationMessage records.
 
-The second question should be interpreted using conversation context.
+Do not indefinitely send the entire conversation history to the LLM.
 
-Create a SessionContextService.
+Use a bounded context strategy.
 
-Responsibilities may include:
+A future summarization mechanism should be possible without redesigning the session system.
 
-- game
-- edition
-- expansions
-- player count
-- selected mode
-- recent conversation messages
-- setup progress
+## Session API and context responsibilities
 
-Controllers should not assemble AI context themselves.
+Planned POST /api/v1/sessions request:
 
-Persist conversation messages.
+```json
+{"gameId":"...","playerCount":4,"teachingDepth":"STANDARD"}
+```
 
-Apply a bounded-context strategy.
+Return a session ID. Validate player count, load the selected Game, resolve the active default
+GameVersion and pin it to the session. Omitted teachingDepth defaults to STANDARD.
+The client does not normally send gameVersionId. Planned POST /api/v1/sessions/{sessionId}/messages
+accepts a question without advancing or resetting the active lesson or setup step.
 
-For example:
+SessionContextService loads game, pinned GameVersion, player count, teaching depth, stage,
+teaching/setup progress, applicable expansions and bounded recent messages. Controllers must
+not assemble AI context themselves. A clarification answer returns to the same lesson;
+Continue Lesson resumes from the persisted position. Catalog default changes do not alter it.
 
-- recent N messages
-- plus summarized prior context
+Milestone 6 implements teaching/session state and navigation. Actual SetupFlow execution and
+its teaching interruption/resume transition arrive in Milestone 7; do not implement that early.
 
-You do not have to implement sophisticated summarization immediately, but design the code so it can be added without rewriting the system.
+# 13. PHASE 3 — TEACHING EXPERIENCE
 
----
+## TEACHING FLOW
 
-# 13. PHASE 3 — GAME MASTER MODES
+Create a generic TeachingFlow system.
 
-Implement behavior for:
-
-## ASK_RULES
-
-Short, direct answers.
-
-Example:
-
-User:
-"Can I trade when it isn't my turn?"
-
-Expected behavior:
-Answer the rule directly and cite the rule source.
-
----
-
-## LEARN
-
-Provide a structured explanation of the game.
-
-The learning experience should be broken into logical sections, such as:
-
-1. Goal
-2. Components
-3. Setup
-4. Turn structure
-5. Trading
-6. Building
-7. Special rules
-8. Winning
-
-Do not send an enormous response unless requested.
-
-Allow the customer to progress through learning sections.
-
----
-
-## QUICK_START
-
-Explain only what players need to begin.
-
-Defer situational rules until necessary.
-
-For example:
-
-"The robber becomes important when someone rolls a seven. I can explain it when that happens."
-
-The system should be optimized to get players playing quickly.
-
----
-
-# 14. PHASE 4 — GUIDED SETUP
-
-The setup system must also be multi-game.
-
-Do not hardcode Catan setup into controllers or shared workflow classes.
-
-Prefer something like:
+Conceptually:
 
 GameVersion
+
+↓
+
+TeachingFlow
+
+↓
+
+TeachingSections
+
+A TeachingFlow belongs to a GameVersion.
+
+Different games may have completely different teaching structures.
+
+Do not hardcode a universal Catan teaching sequence into shared application logic.
+
+For example, Catan might have:
+
+1. Introduction
+2. Objective
+3. Components
+4. Setup
+5. Resource Production
+6. Trading
+7. Building
+8. Robber
+9. Turn Structure
+10. Winning
+
+Another game may have completely different sections.
+
+The teaching engine must remain generic.
+
+## TEACHING CONTENT AND RAG
+
+TeachingFlow and RAG must be separate responsibilities.
+
+TeachingFlow answers:
+
+> What should the customer learn next?
+
+RAG answers:
+
+> What verified rule information supports this explanation or question?
+
+The architecture should conceptually be:
+
+TeachingFlow
     ↓
-SetupFlow
+Teaching Section
     ↓
-SetupSteps
+Rule references / relevant knowledge
+    ↓
+RAG when needed
+    ↓
+LLM
+    ↓
+Beginner-friendly explanation
+
+Do not generate an entire game's teaching flow dynamically every time a customer starts a session.
+
+The teaching structure should be application-managed data.
+
+The LLM may be used to turn verified content into natural beginner-friendly language.
+
+The LLM must not invent rules.
+
+## TEACHING STYLE
+
+The Game Master should speak like a helpful café Game Master teaching people who may have never played before.
+
+Explanations should be:
+
+- conversational
+- beginner-friendly
+- concise
+- structured
+- practical
+- easy to follow at a physical table
+
+Avoid reading formal rulebook text word-for-word.
+
+Prefer:
+
+"Your goal is to be the first player to reach 10 victory points. You mainly earn points by building settlements and cities."
+
+instead of reproducing dense official wording.
+
+Underlying facts must remain grounded in verified rules.
+
+## PROGRESSIVE TEACHING
+
+Do not explain the entire game in one giant response.
+
+Teaching should be progressive.
+
+Example:
+
+Game Master:
+
+"Welcome to Catan! You're competing to build the most successful settlements on the island.
+
+The first player to reach 10 victory points wins.
+
+Next, I'll explain the pieces you'll be using."
+
+Customer chooses:
+
+Continue
+
+The Game Master proceeds to the next TeachingSection.
+
+The customer should have controls/actions such as:
+
+- Continue
+- Previous
+- Repeat
+- Explain Again
+- Ask a Question
+
+The exact wording may differ in the final UI.
+
+## QUESTIONS DURING TEACHING
+
+Customers must be able to ask questions at any point.
+
+Example flow:
+
+Teaching Section
+
+↓
+
+Customer asks question
+
+↓
+
+Question sent through Game Master Q&A pipeline
+
+↓
+
+RAG retrieves relevant rules
+
+↓
+
+LLM produces grounded answer
+
+↓
+
+Answer displayed/spoken
+
+↓
+
+Teaching position remains unchanged
+
+↓
+
+Customer selects Continue Lesson
+
+The system should preserve:
+
+- game
+- GameVersion
+- teaching progress
+- setup progress
+- conversation context
+
+## READY-TO-PLAY TRANSITION
+
+Teaching must clearly indicate when customers know enough to begin playing.
+
+Example:
+
+"That's everything you need to get started.
+
+You're ready to play.
+
+I'll stay here while you play, so if you're unsure about a rule, just ask me."
+
+The session then transitions to:
+
+PLAYING
+
+The customer should not need to manually create another session.
+
+The same session continues.
+
+## PLAYING / Q&A EXPERIENCE
+
+During PLAYING, rule Q&A becomes the primary interaction.
+
+Examples:
+
+"What can I do on my turn?"
+
+"Can I trade now?"
+
+"What happens when I roll a seven?"
+
+"How many cards do I discard?"
+
+"Can I build here?"
+
+"What happens next?"
+
+Questions must use:
+
+- current GameSession
+- resolved GameVersion
+- active expansions if implemented
+- recent conversation context
+- RAG retrieval
+- verified source documents
+
+The assistant should return source citations when appropriate.
+
+If evidence is insufficient, prefer:
+
+"I couldn't verify that confidently from the available rules."
+
+Do not hallucinate a rule.
+
+# 14. PHASE 4 — GUIDED SETUP INTEGRATION
+
+## GUIDED SETUP
+
+Setup is part of the teaching experience.
+
+The Game Master should guide the customer through physically preparing the selected game.
+
+Example:
+
+Game Master:
+
+"Now let's set up the board."
+
+↓
+
+SetupFlow starts
+
+↓
+
+Customer completes setup steps
+
+↓
+
+Game Master:
+
+"Great. Your board is ready. Now I'll explain how your turn works."
+
+Setup must use deterministic application-managed state.
+
+Do not rely on an LLM to remember which setup step comes next.
+
+Phase 4 introduces SetupFlow and integrates it into TeachingFlow.
+
+Implement:
+
+- SetupFlow
+- SetupStep
+- setup progress
+- setup navigation
+- restart support
+- integration between TeachingFlow and SetupFlow
+
+Example:
+
+Teaching: Components
+
+↓
+
+Teaching section triggers setup
+
+↓
+
+SessionStage = SETUP
+
+↓
+
+SetupFlow begins
+
+↓
+
+Customer completes setup
+
+↓
+
+SetupFlow finishes
+
+↓
+
+SessionStage = TEACHING
+
+↓
+
+Teaching resumes
+
+Phase 4 is complete when a new player can be guided through the physical setup of the supported game.
+
+## Setup API
+
+Planned version-bound setup operations include:
+
+- GET /api/v1/sessions/{id}/setup — current step and progress
+- POST /api/v1/sessions/{id}/setup/start
+- POST /api/v1/sessions/{id}/setup/next
+- POST /api/v1/sessions/{id}/setup/previous
+- POST /api/v1/sessions/{id}/setup/repeat
+- POST /api/v1/sessions/{id}/setup/restart
+- POST /api/v1/sessions/{id}/setup/complete
+
+Persist the current/completed steps and teaching return position. Setup completion moves
+SETUP back to TEACHING at the correct section, not directly to PLAYING. The same generic
+engine must execute another game's configured steps without Catan-specific branches.
+
+# 15. PHASE 5 — VOICE AND MINIMAL DEMO UI
+
+## PHASE 5 — VOICE
+
+Add voice on top of the existing Game Master pipeline.
+
+Do not create a separate voice-specific rules system.
+
+Create provider abstractions:
+
+SpeechToTextClient
+
+TextToSpeechClient
+
+Voice flow:
+
+Customer Audio
+
+↓
+
+SpeechToTextClient
+
+↓
+
+Transcription
+
+↓
+
+Existing Game Master Pipeline
+
+↓
+
+Text Answer
+
+↓
+
+TextToSpeechClient
+
+↓
+
+Audio Answer
+
+For the MVP, use push-to-talk interaction.
+
+Do not implement:
+
+- always listening
+- wake-word detection
+- continuous microphone monitoring
+
+Voice must be optional.
+
+Text interaction must continue working independently.
+
+## PHASE 5 — MINIMAL DEMO UI
+
+Phase 5 must also include a minimal browser-based user interface.
+
+The UI is required for:
+
+- manual testing
+- product demonstration
+- portfolio demonstration
+- experiencing the full Game Master flow without Swagger/Postman
+
+This is not yet the final polished café UI.
+
+Keep the UI lightweight so the project remains primarily backend-focused.
+
+Preferred implementation:
+
+- Spring Boot
+- Thymeleaf
+- HTML
+- CSS
+- minimal JavaScript
+
+Do not introduce React, Vue, Angular, or a separate frontend project unless there is a strong technical reason.
+
+The UI must use the same backend application logic as REST endpoints.
+
+Never duplicate:
+
+- game logic
+- teaching progression
+- setup progression
+- RAG logic
+- session logic
+- AI orchestration
+
+inside frontend JavaScript.
+
+## MINIMAL UI — START SCREEN
+
+The initial UI should provide:
+
+BOARD GAME MASTER
+
+Choose Game:
+
+[Catan ▼]
+
+Players:
+
+[4]
+
+Teaching Style:
+
+[Quick]
+[Standard]
+[Detailed]
+
+[Start Game]
+
+STANDARD should be selected by default.
+
+The game list must come from the backend.
+
+Do not hardcode Catan into the page.
+
+## MINIMAL UI — TEACHING SCREEN
+
+After the session starts, show:
+
+- selected game
+- current lesson
+- teaching progress
+- Game Master explanation
+- navigation controls
+- question input
+
+Conceptually:
+
+Catan
+
+Learning the Game
+
+Progress:
+
+✓ Introduction
+✓ Objective
+→ Components
+  Setup
+  Core Rules
+  Turn Structure
+  Important Rules
+  Ready to Play
+
+Game Master:
+
+"Before we set up the board, let's look at the important pieces you'll be using..."
+
+[Previous]
+
+[Repeat]
+
+[Continue]
+
+Ask the Game Master:
+
+[Type a question...]
+
+[Ask]
+
+Questions should appear as temporary conversation interactions without destroying the lesson state.
+
+After the answer, provide:
+
+[Continue Lesson]
+
+## MINIMAL UI — SETUP SCREEN
+
+When TeachingFlow reaches setup:
+
+Catan Setup
+
+Step 3 of 8
+
+Choose Player Colors
+
+"Each player chooses one available color and takes the matching pieces."
+
+[Previous]
+
+[Repeat]
+
+[Done / Next]
+
+Optional progress:
+
+3 / 8
+
+When setup finishes:
+
+"Great. Your game is set up."
+
+[Continue Learning]
+
+## MINIMAL UI — READY TO PLAY
+
+At the end of teaching:
+
+Game Master:
+
+"That's everything you need to start playing.
+
+You're ready to begin.
+
+I'll stay here while you play. If you're unsure about anything, just ask me."
+
+[Start Playing]
+
+The session transitions to:
+
+PLAYING
+
+## MINIMAL UI — PLAYING SCREEN
+
+During gameplay, show:
+
+Catan
+
+Game In Progress
+
+Game Master:
+
+"You're ready to play. Ask me whenever you need help."
+
+Conversation:
+
+Customer:
+
+"What happens when I roll a seven?"
+
+Game Master:
+
+"When a seven is rolled..."
+
+Source:
+
+Official Rulebook — Robber
+
+Input:
+
+[Ask a question...]
+
+[Send]
+
+Voice:
+
+[Hold to Speak]
+
+Additional actions:
+
+[Review Rules]
+
+[End Game]
+
+## REVIEW RULES
+
+During gameplay, customers should be able to review previously taught material.
 
 For example:
 
-Catan GameVersion
-→ Catan Setup Flow
+Review Rules
 
-Azul GameVersion
-→ Azul Setup Flow
+- Objective
+- Components
+- Setup
+- Resource Production
+- Trading
+- Building
+- Robber
+- Winning
 
-Splendor GameVersion
-→ Splendor Setup Flow
+Opening a review section should not reset the GameSession.
 
-The same setup engine should execute all of them.
+The customer must be able to return to:
 
-Catan is the first implementation used to prove this design.
+Game In Progress
 
----
+## UI VOICE INTERACTION
 
+The Phase 5 UI should provide a simple push-to-talk experience if browser capabilities and the chosen architecture support it.
 
-Implement deterministic setup workflows.
+Conceptually:
 
-Do not rely on the LLM to remember what step the user is on.
+[Hold to Speak]
 
-Persist setup progress in application state.
+↓
 
-Endpoints may include:
+record audio
 
-GET /api/v1/sessions/{id}/setup
+↓
 
-POST /api/v1/sessions/{id}/setup/start
+send audio to backend
 
-POST /api/v1/sessions/{id}/setup/next
+↓
 
-POST /api/v1/sessions/{id}/setup/previous
+Speech-to-Text
 
-POST /api/v1/sessions/{id}/setup/restart
+↓
 
-Example response:
+display transcription
 
-{
-  "step": 3,
-  "totalSteps": 8,
-  "key": "PLAYER_COLORS",
-  "title": "Choose player colors",
-  "instruction": "Each player chooses one available color and takes the matching pieces."
-}
+↓
 
-The setup flow should be defined as game data/configuration or domain objects.
-
-Avoid giant switch statements tied specifically to Catan.
-
-The architecture must allow another board game to supply a different setup flow later.
-
----
-
-# 15. PHASE 5 — VOICE
-
-Voice must operate on top of the generic GameSession system.
-
-The voice system must not know Catan-specific rules.
-
-Flow:
-
-Audio
-    ↓
-SpeechToTextClient
-    ↓
-Text
-    ↓
-GameSession
-    ↓
-Resolve game's stored ruleset
-    ↓
-Normal Game Master pipeline
-    ↓
-Text response
-    ↓
-TextToSpeechClient
-    ↓
-Audio
-
-This ensures that when additional games are added later, the voice subsystem requires no game-specific changes.
-
----
-
-
-After text interactions work properly, add voice.
-
-Do not tightly couple the application to one speech vendor.
-
-Create:
-
-SpeechToTextClient
-
-TextToSpeechClient
-
-Voice interaction flow:
-
-Audio
-    ↓
-SpeechToTextClient
-    ↓
-Text
-    ↓
 Game Master pipeline
-    ↓
-Answer text
-    ↓
-TextToSpeechClient
-    ↓
-Audio
 
-Create an endpoint conceptually similar to:
+↓
 
-POST /api/v1/sessions/{sessionId}/voice
+display text answer
 
-Accept an audio file.
+↓
 
-Return either:
+Text-to-Speech
 
-- structured metadata + audio response
+↓
+
+play generated answer
+
+The UI should show transcription so errors can be understood during testing.
+
+If recording directly from the browser introduces unnecessary complexity, audio upload may initially be supported during development, but the final Phase 5 demo should aim for a practical push-to-talk interaction.
+
+## UI ERROR STATES
+
+The UI must gracefully handle:
+
+- backend unavailable
+- GameSession not found
+- AI provider unavailable
+- no rules loaded
+- low RAG confidence
+- speech transcription failure
+- TTS failure
+- invalid audio
+- empty question
+- invalid player count
+
+Do not expose stack traces.
+
+Provide understandable messages.
+
+Example:
+
+"I couldn't verify that rule from the available documents."
 
 or:
 
-- asynchronous-compatible response design if technically necessary
+"I couldn't understand the audio. Please try again."
 
-However, do not add message queues unless required.
+## Voice API and resilience
 
-For the MVP, assume push-to-talk interaction.
-
-Do NOT implement always-listening microphones or wake-word detection yet.
-
-Account for:
-
-- invalid audio
-- transcription errors
-- unsupported file type
-- AI provider failure
-- timeout
-- empty transcription
-
-The text interaction API must remain fully usable without voice.
-
-Voice is an additional interface, not the core domain.
-
----
+POST /api/v1/sessions/{sessionId}/voice accepts audio and returns transcription, text answer,
+citations and playable audio or structured audio metadata. Reuse the session/text application
+pipeline. Validate audio types/sizes, handle timeouts, provider failures and empty transcriptions,
+and keep text available when STT/TTS fails. Do not add queues without a demonstrated need.
+The final demo should provide practical push-to-talk; audio upload may be an interim development aid.
 
 # 16. API DESIGN
 
@@ -1715,16 +2217,15 @@ Conceptually:
 3. Import permitted rule documents
 4. Generate rule embeddings
 5. Define setup flow
-6. Define learning content if required
+6. Define a version-bound TeachingFlow and its teaching-depth content
 7. Add retrieval evaluation cases
 8. Publish/activate the game
-
 
 The README must also document the problem, planned versus implemented features, architecture diagram, RAG flow, stack, local setup, environment variables, database startup, tests, API examples, phases, and deferred future work. Do not present planned commands or features as already operational.
 
 # 26. SCOPE AND NON-GOALS
 
-Implement Phases 1–5 only. Physical robot hardware, computer vision, café inventory, recommendations, deterministic board-state validation, analytics, always-listening microphones, and wake-word detection are deferred. No microservices, Kubernetes, event buses, Redis, or queues without a demonstrated need.
+Implement Phases 1–5 only. Physical robot hardware, computer vision, café inventory/table management, recommendations, deterministic board-state validation or game-rules engines, staff escalation, analytics, polished production café UI, always-listening microphones, and wake-word detection are deferred. No microservices, Kubernetes, event buses, Redis, or queues without a demonstrated need.
 
 # 27. DEVELOPMENT PROCESS
 
@@ -1733,89 +2234,108 @@ Work strictly one milestone at a time. Before implementation, inspect existing c
 # 28. IMPLEMENTATION ORDER
 
 ## Milestone 0 — Project Bootstrap
+
 Create the Java 21+ Spring Boot Gradle project and wrapper, feature-oriented packages, configuration profiles, Docker Compose PostgreSQL + pgvector service, Flyway initialization, schema validation, health endpoint, OpenAPI configuration, consistent API error foundation, and basic startup tests. Document setup and environment configuration. No game-specific functionality.
 Acceptance: local database starts, migrations run, application starts, health/API documentation are reachable, and bootstrap tests pass without paid AI calls.
 
 ## Milestone 1 — Game Domain
+
 Implement generic Game and GameVersion entities, repositories, services, REST APIs, validation, migrations, and tests. Create Catan as data with one supported default version. Validate version ownership and default resolution.
 Acceptance: games and versions can be created/read; invalid players/configuration fail clearly; customers can resolve a default version; no Catan-specific Java services or entities.
 
 ## Milestone 2 — Rule Documents
+
 Implement version-scoped RuleDocument and RuleChunk persistence, permitted local text/Markdown import, cleanup, configurable semantic chunking, source metadata, validation, and ingestion tests. PDF extraction is optional.
 Acceptance: imported content yields ordered traceable chunks belonging to the correct version; malformed input fails clearly; no copyrighted rulebooks are committed.
 
 ## Milestone 3 — Embeddings and Vector Search
+
 Implement EmbeddingClient and its adapter, embedding storage, pgvector retrieval behind RuleRetrievalService, version-scoped search, configuration, migrations/indexes, and Testcontainers tests.
 Acceptance: known embeddings retrieve expected chunks; other games/versions are excluded; provider failures are meaningful.
 
 ## Milestone 4 — RAG Question Answering
+
 Implement LlmClient and adapter, prompt builder, question endpoint with default-version resolution, grounded generation, source references, evidence-based confidence, and insufficient-evidence fallback.
 Acceptance: Phase 1 works end to end with permitted Catan input; unsupported answers are not invented; default tests use provider doubles.
 
 ## Milestone 5 — RAG Improvements
+
 Implement Phase 2 metadata filtering, configurable top-K/thresholds, duplicate suppression, ranking/reranking boundary, evaluation fixtures, and retrieval diagnostics.
 Acceptance: evaluate retrieval separately from generation; ruleset isolation and weak-evidence fallback are verified; document evaluation results.
 
-## Milestone 6 — Game Sessions
-Implement Phase 3 sessions, stable resolved GameVersion, conversation persistence, bounded context, SessionContextService, and ASK_RULES/LEARN/QUICK_START behavior with configurable teaching content.
-Acceptance: customers create a session with gameId/playerCount/mode only; follow-ups use context; default-version changes do not silently change an existing session's ruleset.
+## Milestone 6 — Game Sessions + Teaching Flow
 
-## Milestone 7 — Guided Setup
-Implement Phase 4 version-bound SetupFlow and ordered steps, persisted progress, start/current/complete/next/previous/restart operations, and deterministic transition tests.
-Acceptance: the generic engine executes Catan's configured flow, persists progress, and handles boundaries/restart correctly without LLM-owned state.
+Implement Phase 3 GameSession, ConversationMessage, SessionStage, teachingDepth (QUICK/STANDARD/DETAILED with STANDARD default), stable resolved GameVersion, bounded context and SessionContextService. Add version-bound TeachingFlow/TeachingSection data and persisted teaching progress, continue/previous/repeat/explain-again controls, questions during lessons and resume behavior. Keep workflow state application-owned.
+Acceptance: customers create a session with gameId/playerCount and optional teachingDepth; teaching starts progressively; questions and contextual follow-ups preserve the current lesson; navigation and depth selection are tested; catalog default changes do not alter a pinned ruleset. Setup integration remains Milestone 7.
 
-## Milestone 8 — Voice
-Implement Phase 5 SpeechToTextClient/TextToSpeechClient adapters and push-to-talk endpoint using the existing session/text pipeline. Validate audio, timeouts, provider failures, and empty transcription.
-Acceptance: audio input produces a grounded text answer and speech output; ordinary tests mock speech providers; text remains usable without voice.
+## Milestone 7 — Guided Setup Integrated with Teaching
 
-Phase mapping: Phase 1 = Milestones 1–4 (after bootstrap); Phase 2 = Milestone 5; Phase 3 = Milestone 6; Phase 4 = Milestone 7; Phase 5 = Milestone 8.
+Implement Phase 4 version-bound SetupFlow/SetupStep, persisted progress, start/current/complete/next/previous/repeat/restart operations, teaching-section setup triggers and deterministic interruption/resume transitions. Catan setup is reference data.
+Acceptance: the generic engine executes configured setup, preserves progress during Q&A, handles navigation/restart boundaries, and returns SETUP to TEACHING at the saved lesson. Readiness then transitions the same session to PLAYING; no LLM owns workflow state.
+
+## Milestone 8 — Voice + Minimal Demo UI
+
+Implement Phase 5 SpeechToTextClient/TextToSpeechClient adapters and push-to-talk using the existing session/text pipeline. Validate audio, timeouts, provider failures and empty transcription. Add a lightweight Spring Boot/Thymeleaf browser UI with HTML/CSS/minimal JavaScript, backend-loaded games, player count, teaching depth, lesson/setup navigation, progress-preserving questions, ready-to-play transition, gameplay Q&A/citations/history, transcription/audio, rule review and end session. Keep all business logic in shared backend services.
+Acceptance: the complete teaching → setup → resumed teaching → playing journey can be demonstrated without Swagger/Postman; questions and review do not reset progress; voice displays transcription and plays an answer using the same pipeline; errors are understandable and text remains usable independently. Tests cover backend orchestration and UI integration using provider doubles.
+
+Phase mapping: Phase 1 = Milestones 1–4 (after bootstrap); Phase 2 = Milestone 5; Phase 3 = Milestone 6; Phase 4 = Milestone 7; Phase 5 = Milestone 8 (voice and minimal demo UI).
 
 # 29. ACCEPTANCE CRITERIA
 
-The project is considered complete through Phase 5 when this scenario works:
+Phase 5 is considered complete when this complete experience works:
 
-1. Developer starts PostgreSQL with Docker Compose.
-2. Application starts successfully.
-3. The generic Game and GameVersion architecture exists.
-4. Catan is registered as the first supported Game.
-5. Catan has one configured default GameVersion.
-6. A permitted/local Catan rule source can be ingested for that GameVersion.
-7. Rule chunks receive embeddings.
-8. User creates a session using:
+1. Developer starts PostgreSQL through Docker Compose.
+2. Spring Boot starts successfully.
+3. Developer opens the browser UI.
+4. Supported games are loaded from the backend.
+5. Catan appears as the first supported game.
+6. Customer selects Catan.
+7. Customer selects four players.
+8. Customer selects STANDARD teaching depth.
+9. Customer starts the session.
+10. Backend resolves the appropriate GameVersion.
+11. TeachingFlow starts.
+12. Game Master introduces Catan.
+13. Game Master explains the objective.
+14. Customer continues.
+15. Game Master explains important components.
+16. TeachingFlow reaches the setup section.
+17. SetupFlow starts.
+18. Customer progresses through setup steps.
+19. Setup completes.
+20. TeachingFlow resumes.
+21. Game Master explains the core rules.
+22. Game Master explains how a turn works.
+23. Customer asks a clarification question during teaching.
+24. The current teaching position remains saved.
+25. RAG retrieves relevant rule information.
+26. Game Master answers with grounded information.
+27. Source citation is available.
+28. Customer chooses Continue Lesson.
+29. Teaching resumes correctly.
+30. Teaching completes.
+31. Game Master tells the customer they are ready to play.
+32. Session transitions to PLAYING.
+33. Customer asks a text rule question.
+34. RAG retrieves relevant rules.
+35. Game Master answers with a citation.
+36. Customer asks a contextual follow-up.
+37. Conversation context is correctly understood.
+38. Customer uses voice interaction.
+39. Audio is transcribed.
+40. The transcription is displayed.
+41. The same Game Master pipeline handles the question.
+42. The response is displayed.
+43. Text-to-Speech generates an audio response.
+44. Audio is played to the customer.
+45. Customer can review previously taught rules.
+46. Customer returns to the active game.
+47. Customer ends the session.
+48. Automated tests pass.
+49. No secrets are committed.
+50. The entire workflow can be demonstrated without Swagger or Postman.
 
-{
-  "gameId": "<catan-id>",
-  "playerCount": 4,
-  "mode": "QUICK_START"
-}
-
-9. User does not need to manually provide an edition.
-10. The backend resolves the appropriate Catan GameVersion.
-11. User asks:
-
-"What happens if I roll a seven?"
-
-12. Relevant chunks from the resolved rule set are retrieved.
-13. The LLM answers using those chunks.
-14. The response contains source references.
-15. User asks:
-
-"What if I don't have any cards?"
-
-16. The assistant interprets the question using session conversation context.
-17. User starts guided setup.
-18. The generic setup engine loads the Catan setup flow.
-19. The API walks the user through setup step by step.
-20. User submits a question through voice.
-21. Audio is transcribed.
-22. The same Game Master pipeline processes the text.
-23. The resulting answer is converted to speech.
-24. Automated tests pass.
-25. No secrets are committed.
-26. README explains how to run and demonstrate the system.
-27. The core architecture contains no unnecessary dependency on Catan.
-28. Adding another board game does not require rewriting the RAG, session, voice, or setup engines.
-
+Additional invariants: shared engines contain no Catan-specific assumptions; adding another game does not require rewriting ingestion, retrieval, teaching, setup, sessions or voice. README explains the complete demonstration and clearly separates implemented features from planned requirements.
 
 # 30. COMPLETION AND VALIDATION
 
@@ -1823,9 +2343,79 @@ A milestone is complete only when its implemented behavior satisfies its accepta
 
 # 31. ADDING A SECOND GAME
 
-Register Game and supported GameVersion metadata; import permitted documents; generate embeddings; configure version-bound setup and learning content; add evaluation/test fixtures; activate the supported version. Core ingestion, RAG, sessions, setup execution, and voice must be reusable without redesign. Expansion support must remain possible without implementing complex expansion behavior now.
+Register Game and supported GameVersion metadata; import permitted documents; generate embeddings; configure version-bound TeachingFlow/TeachingSection and SetupFlow/SetupStep data; add evaluation/test fixtures; activate the supported version. Core ingestion, RAG, sessions, setup execution, and voice must be reusable without redesign. Expansion support must remain possible without implementing complex expansion behavior now.
 
-# 32. FIRST IMPLEMENTATION TASK
+# 32. NEXT IMPLEMENTATION TASK
 
-The repository skeleton does not complete Milestone 0. When implementation is explicitly requested, begin Milestone 0 only. Do not begin Milestone 1 automatically. Build for many games. Validate with one game.
+Determine progress from docs/DEVELOPMENT_STATUS.md. Implement only the milestone explicitly requested by the user; a completed milestone does not authorize starting the next. Documentation updates do not authorize source changes. Preserve working architecture unless a requirement actually requires a change. Build for many games; validate with one.
 
+# 33. PORTFOLIO EXPECTATION AND ARCHITECTURAL PRINCIPLES
+
+## PORTFOLIO EXPECTATION
+
+By Phase 5, the repository should demonstrate:
+
+- Java
+- Spring Boot
+- REST APIs
+- PostgreSQL
+- pgvector
+- Flyway
+- schema design
+- embeddings
+- semantic retrieval
+- RAG
+- LLM integration
+- provider abstractions
+- GameVersion handling
+- session state
+- conversation context
+- teaching workflows
+- setup state machines
+- voice integration
+- Thymeleaf/browser UI
+- automated testing
+- Testcontainers
+- Docker
+- validation
+- API error handling
+- source citations
+- confidence handling
+
+The application should be demonstrable as an actual product experience rather than only an API collection.
+
+## ARCHITECTURAL PRINCIPLES
+
+The following principles must remain true:
+
+### Build for many games, validate with one.
+
+Catan is the first supported game.
+
+Catan must not define the architecture.
+
+### Teaching state belongs to the application.
+
+The LLM must not be responsible for remembering which lesson comes next.
+
+### Setup state belongs to the application.
+
+The LLM must not be responsible for remembering setup progress.
+
+### Rules come from verified sources.
+
+Use RAG rather than relying only on model memory.
+
+### LLM explains; application orchestrates.
+
+Use the LLM for natural explanations and conversation.
+
+Use backend services/state machines for deterministic workflow.
+
+### Voice is an interface.
+
+Voice must reuse the same Game Master pipeline used by text.
+
+### UI is thin.
+
+Do not put domain logic into Thymeleaf templates or frontend JavaScript.
