@@ -42,6 +42,16 @@ springdoc:
   swagger-ui:
     enabled: false
 boardgame:
+  embedding:
+    provider: ${EMBEDDING_PROVIDER:disabled}
+    model: ${EMBEDDING_MODEL:text-embedding-3-small}
+    api-key: ${EMBEDDING_API_KEY:}
+    dimensions: ${EMBEDDING_DIMENSIONS:1536}
+    timeout: ${EMBEDDING_TIMEOUT:30s}
+    max-input-characters: ${EMBEDDING_MAX_INPUT_CHARACTERS:4000}
+    max-document-chunks: ${EMBEDDING_MAX_DOCUMENT_CHUNKS:1000}
+  rag:
+    top-k: ${RAG_TOP_K:5}
   rules:
     chunk-size: ${RULE_CHUNK_SIZE:1200}
     chunk-overlap: ${RULE_CHUNK_OVERLAP:200}

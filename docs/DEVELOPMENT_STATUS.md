@@ -34,19 +34,21 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-The product direction is planned behavior. Milestones 0–2 remain complete; teaching, sessions,
-setup, voice and browser UI are not implemented yet. This documentation revision starts no milestone.
+The product direction is planned behavior. Milestones 0–3 are complete; generated answers,
+teaching, sessions, setup, voice and browser UI are not implemented yet.
 
 ## Current Milestone
 
-**Milestone 2 — Rule Documents + Ingestion (complete and validated)**
+**Milestone 3 — Embeddings + Vector Search (complete and validated)**
+
+Milestone 4 remains unstarted.
 
 ## Milestones
 
 - [x] Milestone 0 — Project Bootstrap
 - [x] Milestone 1 — Game + GameVersion Domain
 - [x] Milestone 2 — Rule Documents + Ingestion
-- [ ] Milestone 3 — Embeddings + Vector Search
+- [x] Milestone 3 — Embeddings + Vector Search
 - [ ] Milestone 4 — RAG Question Answering
 - [ ] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
@@ -116,7 +118,7 @@ Expected:
 
 ## Milestone 3 — Embeddings + Vector Search
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Complete and validated; implementation details and results are retained below.
 
 Expected:
 
@@ -272,9 +274,16 @@ The application should be demonstrable without Swagger or Postman.
 - Original CC0 fictional Lantern Trail sample and local import instructions. No commercial rulebooks or source files are automatically imported.
 - Unit and isolated PostgreSQL ingestion tests, including real HTTP multipart handling, malformed input, version isolation, database constraints, transactional rollback, and V3-to-V4 upgrade preservation.
 
-Milestone 3 remains unstarted. No embeddings, vector search, RAG answers, sessions, setup behavior,
-or AI/speech integrations were implemented. Work remains on `milestone-2-rule-documents`.
-No commit, push, staging operation, or branch change was performed during Milestone 2 work.
+- Provider-neutral EmbeddingClient, validated immutable normalized vectors and provider/model/dimension profiles.
+- Opt-in OpenAI HTTP adapter with bounded input/timeouts, safe provider errors and disabled-by-default configuration.
+- Flyway V5 stores per-chunk profile-specific vectors with version ownership and dimension/nonzero constraints.
+- Explicit document indexing/status endpoints, reuse of existing embeddings and atomic batch persistence after provider calls.
+- RuleRetrievalService performs version/profile-scoped exact cosine ranking with bounded top-K and traceable source metadata.
+- Retrieval-only REST API, OpenAPI contracts, operational timing logs and deterministic isolated tests without paid calls.
+
+Milestone 4 remains unstarted. No LLM-generated answers, confidence handling, sessions, teaching,
+setup, voice or browser UI were implemented. Work remains on `milestone-3-embeddings`.
+No commit, push, staging operation, or branch change was performed during Milestone 3 work.
 
 ## Major Architectural Decisions
 
@@ -285,7 +294,7 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Customers normally select Game only; the backend resolves a default GameVersion and pins it to the session.
 - Catan is the first reference dataset; shared engines are game-independent.
 - Implement only the requested milestone; stop before the next.
-- Root package is `com.boardgamemaster`; game and rules features are implemented, while later feature packages remain reserved.
+- Root package is `com.boardgamemaster`; game, rules, embedding AI and retrieval features are implemented, while later feature packages remain reserved.
 - Spring Boot 3.5.16, Gradle 8.14.4, springdoc 2.8.17, Java 21 toolchain; JUnit 5 and Boot-managed Testcontainers.
 - `test` runs without Docker; `integrationTest` requires it. `check` includes both and does not silently skip integration tests.
 - Local profile imports `.env`; production requires external database credentials and disables API documentation by default.
@@ -296,9 +305,15 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Rule documents belong to a GameVersion; chunks reference both document and version through a composite FK. The owning game/edition resolves through GameVersion. No redundant game ID or embedding fields are introduced.
 - Structural chunking uses ATX Markdown headings and paragraphs, with sentence/word fallback. It is deterministic and does not call AI. Fenced code remains text; this is not a full Markdown renderer. Overlap is a maximum budget and may be zero when no whole trailing part fits.
 - Optional standalone `<!-- page: N -->` markers provide explicit page metadata; unknown pages remain null. Stored normalized text retains markers, while chunks exclude them. Source offsets are zero-based UTF-16 with exclusive ends, matching Java and JavaScript substring indexing.
-- Ingestion uses validated `boardgame.rules.*` / `RULE_*` settings: 1200-character chunks, 200-character overlap budget, 1 MiB input limit and 10000 chunks by default. Servlet file/request limits remain 10 MiB. Existing reserved RAG settings are still inactive.
+- Ingestion uses validated `boardgame.rules.*` / `RULE_*` settings: 1200-character chunks, 200-character overlap budget, 1 MiB input limit and 10000 chunks by default. Servlet file/request limits remain 10 MiB. `RAG_TOP_K` is active for retrieval; other reserved RAG settings remain inactive.
 - Metadata requires a source reference and document version; language must match the selected version. Inactive versions may be prepared. Duplicate imports create independent documents. URLs are metadata only; uploaded basenames are sanitized and no server filesystem paths are read.
 - PDF extraction, document edit/delete, deduplication, background ingestion and full Markdown parsing are deferred. No copyrighted commercial rule source is bundled. Original demo text is CC0 and should be imported into a separate demo game/version.
+- Embeddings use a separate vector table keyed by chunk/provider/model/dimensions; a composite FK preserves version ownership. Changing the active profile requires explicit reindexing and cannot mix incompatible vector spaces.
+- Exact cosine retrieval is intentional at this milestone's scale. A B-tree index supports version/profile filtering; a materialized candidate query isolates dimensions before distance evaluation. No approximate vector index, threshold filtering or reranking is introduced.
+- Provider calls happen outside database transactions. A short locked transaction persists the complete generated batch atomically and handles concurrent duplicate indexing idempotently. Concurrent callers can still incur duplicate provider costs before persistence.
+- Indexing is explicit and synchronous, bounded by document chunk count and per-input characters. Existing imports are preserved and remain unindexed until requested. Ingestion does not call a provider.
+- Embedding configuration defaults to disabled; blank legacy provider/model/dimensions values retain safe defaults. An enabled provider requires a key. OpenAI HTTP requests have a fixed endpoint, no redirect following and bounded timeouts; errors never include upstream bodies or credentials.
+- Retrieval returns chunks, source metadata and cosine scores only. Scores are not answer confidence; LLM answering and confidence handling belong to later milestones.
 
 ### Multi-Game Architecture
 
@@ -358,6 +373,18 @@ It must remain thin and reuse backend application logic.
 
 ## Validation
 
+### Milestone 3
+
+Validation on 2026-10-07 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- Final `gradlew.bat check bootJar --no-daemon --console=plain` — PASS. All 106 tests passed: 76 unit tests and 30 PostgreSQL/pgvector integration tests, zero failures/errors/skips. Executable JAR rebuilt successfully.
+- Provider tests use a local HTTP fixture: request contract, success, invalid response/model/index/dimensions, nonfinite/zero vectors, HTTP failures, rate limiting, timeout, input limits, startup validation, blank legacy settings and credential redaction. Extreme finite vectors normalize without overflow/underflow.
+- Retrieval tests prove known-vector cosine ordering, deterministic ties, source traceability, top-K bounds and exclusion across games, editions, providers, models and dimensions without an LLM. Empty indexes avoid query-provider calls.
+- Indexing tests cover reuse/idempotency, whole-document input validation before provider calls, provider failure preserving prior data, atomic database rollback, concurrent duplicate indexing and ownership/vector constraints.
+- Real HTTP tests exercise status, indexing, retrieval, validation, ownership errors, disabled provider, safe timeout responses and OpenAPI. Migration tests preserve existing documents/chunks on V4-to-V5 upgrade, rerun idempotently, and retain V1-to-current catalog upgrade coverage. Existing Milestone 0–2 checks continue to pass.
+- Checks require local Gradle daemon/Docker access outside the sandbox and use isolated Testcontainers databases. No paid calls, real provider keys or live OpenAI service validation were used. The existing Compose database, `.env`, local services and persisted user data were not changed.
+- `git diff --check` — PASS. AGENTS.md and PROJECT_SPEC.md remain unchanged. Changes remain unstaged and uncommitted on `milestone-3-embeddings`; no push or branch change was performed. Restart the local app to apply V5 before manual use; enable/configure embeddings explicitly for live indexing/search.
+
 ### Documentation revision — 2026-10-07
 
 - Updated PROJECT_SPEC.md, AGENTS.md, this status file and README.md for the teaching-first journey.
@@ -411,9 +438,11 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining Milestone 2 acceptance blockers are known. Docker/WSL is working. Milestone 3 remains unstarted.
+- No remaining Milestone 3 acceptance blockers are known. Docker/WSL is working. Milestone 4 remains unstarted.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
-- Catalog and rule import are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation, embeddings, retrieval and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; there is no deduplication yet.
+- Catalog, rule import, indexing and retrieval are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; there is no deduplication yet.
+- Live provider interoperability and semantic quality were not tested with a real API key. Tests establish the HTTP contract and deterministic database retrieval; they do not measure real-model relevance. Provider token limits can still reject text because local bounds count characters, not tokens.
+- Indexing is synchronous and calls the provider per pending chunk. A failed batch stores no new vectors but already completed provider requests may still incur costs. Exact search and synchronous indexing will need revisiting for larger datasets; no ANN index or background worker is included.
 - JDK 21 is now installed and machine-level `JAVA_HOME` and PATH are configured correctly. This existing Codex session retained the old environment; validation loaded the installed `JAVA_HOME` into the process explicitly. Open a fresh PowerShell window or restart Codex to inherit the updated environment. The earlier portable tooling/cache remains outside the repository at `D:\Projects\.bootstrap-tools`.
 
 ## Known Future Work

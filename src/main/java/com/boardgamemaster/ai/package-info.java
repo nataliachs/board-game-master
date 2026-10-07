@@ -1,2 +1,2 @@
-/** Reserved feature boundary; implementation belongs to a later milestone. */
+/** Provider-neutral embedding boundary and provider adapters. Answer and speech providers remain planned. */
 package com.boardgamemaster.ai;

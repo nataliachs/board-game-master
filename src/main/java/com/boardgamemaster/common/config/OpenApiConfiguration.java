@@ -12,6 +12,6 @@ public class OpenApiConfiguration {
         return new OpenAPI().info(new Info()
                 .title("Board Game Master API")
                 .version("v1")
-                .description("Multi-game platform. Game/version catalog and version-scoped text/Markdown rule ingestion are implemented; retrieval, sessions, and AI are planned."));
+                .description("Multi-game platform. Catalog, rule ingestion, explicit embedding indexing and version-scoped vector retrieval are implemented; answer generation, sessions and teaching remain planned."));
     }
 }
