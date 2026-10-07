@@ -6,12 +6,14 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–2 are complete and validated.**
+**Milestones 0–3 are complete and validated.**
 The application supports generic Game and GameVersion metadata, registration/read APIs,
 default-version selection, and player-count validation. Catan has one seeded reference
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
-for a specific version and read as ordered, traceable chunks. Milestone 3 remains unstarted;
-embeddings, retrieval, rules Q&A, sessions, TeachingFlow, setup, voice and browser UI remain planned.
+for a specific version and read as ordered, traceable chunks. Explicit embedding indexing and
+version-scoped vector retrieval are implemented with opt-in provider configuration.
+Milestone 4 remains unstarted; generated rules answers, sessions, TeachingFlow, setup, voice
+and browser UI remain planned.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
@@ -21,7 +23,7 @@ embeddings, retrieval, rules Q&A, sessions, TeachingFlow, setup, voice and brows
 ## Planned product experience
 
 The sections below describe the intended product, not functionality already available in the
-Milestone 2 application. Current executable setup, API and test instructions are retained below.
+Milestone 3 application. Current executable setup, API and test instructions are retained below.
 
 ## Customer Experience
 
@@ -100,8 +102,8 @@ Core concepts include:
 
 AI integrations are kept behind provider abstractions.
 
-The project uses PostgreSQL with pgvector installed. Rule-document storage is implemented;
-semantic retrieval and the session/teaching/setup concepts above remain planned.
+The project uses PostgreSQL with pgvector installed. Rule-document storage and semantic
+retrieval are implemented; answer generation and the session/teaching/setup concepts above remain planned.
 
 ## RAG
 
@@ -227,11 +229,20 @@ Active configuration:
 | `RULE_CHUNK_OVERLAP` | `200`; whole trailing paragraph/sentence overlap budget, 0 to size minus 1 |
 | `RULE_MAX_BYTES` | `1048576` (1 MiB); import byte limit, at most 10 MiB |
 | `RULE_MAX_CHUNKS` | `10000`; import chunk limit, 1–100000 |
+| `EMBEDDING_PROVIDER` | `disabled`; set `openai` to enable provider requests |
+| `EMBEDDING_MODEL` | `text-embedding-3-small`; selected embedding model |
+| `EMBEDDING_API_KEY` | Required only when `openai` is enabled; keep private |
+| `EMBEDDING_DIMENSIONS` | `1536`; vector dimensions, 1–2000 |
+| `EMBEDDING_TIMEOUT` | `30s`; connect/request timeout, greater than zero and at most 120s |
+| `EMBEDDING_MAX_INPUT_CHARACTERS` | `4000`; maximum chunk/query UTF-16 length, 1–16000 |
+| `EMBEDDING_MAX_DOCUMENT_CHUNKS` | `1000`; synchronous indexing limit, 1–10000 |
+| `RAG_TOP_K` | `5`; default retrieved match count, 1–50 |
 
-The LLM/embedding/speech/RAG names retained in `.env.example` are reserved for future
-milestones and are not bound or used. No provider keys are needed for ingestion.
+LLM/speech, `RAG_SIMILARITY_THRESHOLD` and `RAG_CHUNK_*` settings remain reserved.
+Embedding settings and `RAG_TOP_K` are active. No provider keys are needed for ingestion,
+startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
-proposals remain inactive. Invalid ingestion limits fail application startup. Add optional
+proposals remain inactive. Invalid ingestion/embedding/retrieval limits fail startup. Add optional
 overrides to your existing `.env`; do not overwrite it with the example file.
 The `prod` profile does not read `.env` and disables API documentation by default.
 Flyway creates the vector extension; the database migration role needs suitable privileges.
@@ -242,7 +253,8 @@ With the database running, `bootRun` applies Flyway migrations before Hibernate 
 validation. V1 installs pgvector; V2 creates the catalog tables and constraints;
 V3 adds Catan reference metadata; V4 adds version-scoped rule documents and chunks.
 Restart an already-running application to pick up the new code and migrations.
-Existing database volumes should be retained. No rule content is seeded automatically.
+V5 adds embedding storage and its ruleset/profile index. Existing database volumes should be
+retained. No rules or embeddings are seeded automatically; existing documents stay unindexed.
 
 ```powershell
 .\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
@@ -257,7 +269,7 @@ atomic and concurrent default changes, database constraints, health, Swagger, an
 It never silently skips missing Docker and does not use your local Compose database or `.env`.
 No tests call paid AI services. Rule ingestion tests also cover cleanup, chunk boundaries,
 overlap, UTF-8 validation, source offsets, page metadata, version isolation, atomic rollback,
-upload limits, and V3-to-V4 migration preservation. Current total: 44 unit tests and 20 integration tests.
+upload limits, migration preservation and vector retrieval. See development status for current test totals.
 HTML reports appear under `build/reports/tests/test` and `build/reports/tests/integrationTest`.
 
 Manual demonstration after starting the application:
@@ -408,10 +420,74 @@ limit rejects files/requests over 10 MiB; oversized requests may return `PAYLOAD
 before application-level `DOCUMENT_TOO_LARGE` validation. Upload MIME labels are not trusted;
 extension and decoded contents determine acceptance.
 
-PDF extraction, URL import, document editing/deletion, deduplication, asynchronous jobs,
-embeddings and search are not implemented. Repeating an import creates a new document.
+PDF extraction, URL import, document editing/deletion, deduplication and asynchronous ingestion
+are not implemented. Repeating an import creates a new document.
 There is no authentication yet; this remains a local-development API. Restart the app to
-apply V4 before using these endpoints. The implementation checks did not migrate your local DB.
+apply the pending migrations before using these endpoints. The implementation checks did not migrate your local DB.
+
+## Implemented embeddings and retrieval API
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/api/v1/game-versions/{versionId}/documents/{documentId}/embeddings` | Counts for the active vector profile; no provider call |
+| POST | `/api/v1/game-versions/{versionId}/documents/{documentId}/embeddings` | Generate/store missing vectors for this document; synchronous and idempotent for the profile |
+| POST | `/api/v1/game-versions/{versionId}/rules/search` | Retrieve ranked source chunks; JSON `{"query":"...","topK":5}`; topK optional |
+
+These endpoints retrieve evidence only. They do not produce a generated answer, confidence label,
+teaching flow or session. Search returns source metadata and `cosineSimilarity` (−1 to 1), which
+measures vector alignment rather than confidence or factual correctness. No threshold is applied.
+Unknown/wrong-version sources return 404, invalid input 400, an indexing size limit 413 and
+storage conflicts 409. Disabled/unavailable/rate-limited providers return safe 503 errors,
+provider timeouts 504 and invalid responses 502. Rule text and raw provider errors are not logged.
+
+Indexing is separate from import. Restart the app to apply V5, then explicitly index each existing
+document you want searchable. The provider is **disabled by default**. To opt in, add or update
+these entries in your existing private `.env` without replacing its database credentials:
+
+```dotenv
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_API_KEY=your-private-api-key
+EMBEDDING_DIMENSIONS=1536
+```
+
+Restart after changing configuration. Blank legacy provider/model/dimensions entries use the
+disabled/default settings, so an older `.env` keeps startup working. Enabling OpenAI requires a
+nonblank API key. Indexing and nonempty-index search send rule/query text to the configured
+provider and may incur charges; no external provider calls were made during implementation checks.
+
+The adapter follows the [official OpenAI embeddings API](https://developers.openai.com/api/reference/resources/embeddings/methods/create),
+using float output and explicit dimensions. Select a model supporting the dimensions parameter.
+The character limit is a resource bound, not an exact token count; provider token limits still
+apply, and oversized chunks may need smaller ingestion settings and a fresh import.
+
+For the demo document created in the previous section, after opting in and restarting:
+
+```powershell
+# Reuse $version.id and $document.id from the import demo, or replace with saved UUIDs.
+$versionBase = "http://localhost:8080/api/v1/game-versions/$($version.id)"
+$indexUrl = "$versionBase/documents/$($document.id)/embeddings"
+Invoke-RestMethod $indexUrl
+Invoke-RestMethod -Method Post -Uri $indexUrl
+Invoke-RestMethod $indexUrl
+$search = @{ query = 'What happens when my token reaches the last space?'; topK = 3 } | ConvertTo-Json
+(Invoke-RestMethod -Method Post -Uri "$versionBase/rules/search" `
+    -ContentType 'application/json' -Body $search).matches | Format-List
+```
+
+Expected: indexed counts equal total chunks, and search returns only this selected version's
+sources, ranked by exact cosine similarity with stable tie ordering. An empty index returns an
+empty match list without a query embedding call. Repeated indexing reuses existing profile vectors.
+Changing provider/model/dimensions selects a different vector space; old vectors remain stored,
+but each document must be indexed for the new profile before it contributes search results.
+Concurrent indexing may duplicate provider requests, though stored vectors remain unique.
+Indexing is atomic per document and defaults to at most 1000 chunks; large/background jobs and
+model-vector deletion remain deferred. Prefer indexing permitted sources you are willing to send
+to the selected provider.
+
+Storage uses pgvector with a version/profile B-tree filter index and exact search, avoiding ANN
+recall loss at current scale. See [pgvector's exact search documentation](https://github.com/pgvector/pgvector/tree/v0.8.2#querying).
+Tests use fixed known vectors and local fake HTTP responses, independent of LLMs and API keys.
 
 ## Planned API examples
 
@@ -434,7 +510,7 @@ Content-Type: application/json
 - [x] Milestone 0 — Project Bootstrap
 - [x] Milestone 1 — Game + GameVersion Domain
 - [x] Milestone 2 — Rule Documents + Ingestion
-- [ ] Milestone 3 — Embeddings + Vector Search
+- [x] Milestone 3 — Embeddings + Vector Search
 - [ ] Milestone 4 — RAG Question Answering
 - [ ] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
@@ -442,7 +518,7 @@ Content-Type: application/json
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 3 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 4 is unstarted.
 
 ## Adding a game
 
