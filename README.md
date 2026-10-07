@@ -5,16 +5,16 @@ AI-powered board game assistant for board game cafés.
 The platform is designed to support multiple board games. Catan is used as the initial reference implementation and test dataset.
 
 ## Current state
-**Milestone 0 — Project Bootstrap is complete and validated.**
-The Spring Boot application, Gradle wrapper, PostgreSQL/pgvector Compose service,
-Flyway initialization, health, OpenAPI, and API error foundation are present.
-Game metadata, rules, RAG, sessions, guided setup, and voice remain planned.
-Milestone 1 has not started. See development status for actual check results.
+**Milestones 0 and 1 are complete and validated.**
+The application supports generic Game and GameVersion metadata, registration/read APIs,
+default-version selection, and player-count validation. Catan has one seeded reference
+version (5th Edition / English). No rule documents or rules assistance exist yet.
+Milestone 2 remains unstarted; ingestion, RAG, sessions, setup, and voice remain planned.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
 - [Development status](docs/DEVELOPMENT_STATUS.md)
-- [Bootstrap architecture and profiles](docs/ARCHITECTURE.md)
+- [Architecture and profiles](docs/ARCHITECTURE.md)
 
 ## Problem and planned behavior
 Customers need help learning games and resolving rules. The planned platform provides grounded answers with citations, contextual conversations, structured learning, deterministic guided setup, and push-to-talk voice.
@@ -52,13 +52,14 @@ The first build and container startup require internet access for dependencies a
 Run from this repository's root in PowerShell:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 # Edit .env and set a nonempty POSTGRES_PASSWORD before continuing.
 docker compose up -d --wait
 .\gradlew.bat bootRun
 ```
 
-On macOS/Linux, use `cp .env.example .env` and `sh ./gradlew bootRun`.
+On macOS/Linux, create `.env` from `.env.example` only if it does not already exist,
+then use `sh ./gradlew bootRun`.
 The default `local` profile reads `.env` automatically; no shell import is needed.
 Use simple unquoted `NAME=value` entries (Java properties syntax), with no `export` or
 variable interpolation in `.env`. Existing environment variables override file values.
@@ -85,17 +86,22 @@ Flyway creates the vector extension; the database migration role needs suitable 
 
 ## Running database, application, and tests
 With the database running, `bootRun` applies Flyway migrations before Hibernate schema
-validation. V1 installs pgvector; no game tables or seed data exist yet.
+validation. V1 installs pgvector; V2 creates the catalog tables and constraints;
+V3 adds Catan reference metadata. Restart an already-running Milestone 0 application
+to pick up the new code and migrations. Existing database volumes should be retained.
 
 ```powershell
-.\gradlew.bat test             # Fast MVC/error tests, no Docker needed
+.\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
 .\gradlew.bat integrationTest  # Isolated pgvector PostgreSQL via Testcontainers; Docker required
 .\gradlew.bat check bootJar    # Both suites and executable JAR; fails if Docker is unavailable
 ```
 
-The integration suite runs a real HTTP server on a random port and verifies migration
-history, vector operations, repeat migration, health, Swagger, OpenAPI, and missing-resource
-errors. It never silently skips missing Docker. No tests call paid AI services.
+The integration suite runs real HTTP servers and isolated PostgreSQL/pgvector containers.
+It verifies migrations (including upgrading a V1 database while preserving existing data),
+catalog registration/read APIs, ownership, duplicates, inactive/missing defaults, player limits,
+atomic and concurrent default changes, database constraints, health, Swagger, and OpenAPI.
+It never silently skips missing Docker and does not use your local Compose database or `.env`.
+No tests call paid AI services. Current total: 27 unit tests and 13 integration tests.
 HTML reports appear under `build/reports/tests/test` and `build/reports/tests/integrationTest`.
 
 Manual demonstration after starting the application:
@@ -106,11 +112,74 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 # Open http://localhost:8080/swagger-ui/index.html in a browser.
 ```
 
-Health should return `{"status":"UP"}`. OpenAPI currently has no game operations.
-Requests to `/api/v1/games` should return HTTP 404 with the shared error format.
-Database migrations, application startup, health, and API documentation were verified
-with Docker on 2026-10-07; see development status for results. Temporary validation
-services have been stopped, so follow the setup commands to start your own local instance.
+Health should contain `"status":"UP"`. Swagger now documents the game catalog operations.
+The test suite passed with Docker on 2026-10-07; see development status for actual results.
+
+## Implemented catalog API
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/api/v1/games?page=0&size=20` | Stable page DTO (`items`, `page`, `size`, `totalElements`, `totalPages`), sorted by slug; size 1–100 |
+| POST | `/api/v1/games` | Register metadata; 201 and Location header |
+| GET | `/api/v1/games/{gameId}` | Read metadata |
+| POST | `/api/v1/games/{gameId}/versions` | Register version; 201 and Location header |
+| GET | `/api/v1/games/{gameId}/versions` | Read this game's versions |
+| GET | `/api/v1/games/{gameId}/versions/{versionId}` | Read a version with ownership validation |
+| GET | `/api/v1/games/{gameId}/default-version?playerCount=4` | Resolve the active default; player count is optional |
+| PUT | `/api/v1/games/{gameId}/default-version` | Select an active, owned version using `{"gameVersionId":"..."}` |
+
+Metadata reads include inactive games/versions for configuration visibility. Default resolution
+requires an active game, an active default, and a valid player count when supplied.
+Games can be registered before their versions; missing defaults return 409 rather than picking
+an arbitrary version. Registering with `defaultVersion: true` replaces the previous default
+atomically. Repeating PUT with the same version is idempotent. Inactive versions cannot be defaults.
+Version identity is edition + versionLabel + language within a game; edition/label comparisons
+are case-insensitive and language tags are stored in lowercase. Supported tag syntax includes
+`en`, `id`, and `en-US`; it is a constrained syntax, not full BCP 47 registry validation.
+The catalog supplies registration/read and default selection; general edits, deletion,
+and activation/deactivation APIs are not implemented in this milestone.
+
+After restarting the application, demonstrate the seeded data in PowerShell:
+
+```powershell
+Invoke-RestMethod 'http://localhost:8080/api/v1/games'
+$catanId = '00000000-0000-0000-0000-000000000001'
+Invoke-RestMethod "http://localhost:8080/api/v1/games/$catanId/versions"
+Invoke-RestMethod "http://localhost:8080/api/v1/games/$catanId/default-version?playerCount=4"
+# playerCount=2 returns HTTP 400 with code INVALID_PLAYER_COUNT.
+```
+
+Register another game and a default version:
+
+```powershell
+$gameBody = @{
+    slug = "demo-$([guid]::NewGuid().ToString('N'))"
+    name = 'Demo Game'
+    minPlayers = 2
+    maxPlayers = 4
+    estimatedDurationMinutes = 30
+    active = $true
+} | ConvertTo-Json
+$game = Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/api/v1/games' `
+    -ContentType 'application/json' -Body $gameBody
+$versionBody = @{
+    edition = 'First Edition'
+    versionLabel = 'base-game'
+    language = 'en'
+    active = $true
+    defaultVersion = $true
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/games/$($game.id)/versions" `
+    -ContentType 'application/json' -Body $versionBody
+Invoke-RestMethod "http://localhost:8080/api/v1/games/$($game.id)/default-version?playerCount=2"
+```
+
+Errors retain the shared `code`, `message`, `timestamp`, and `path` fields. Invalid bodies,
+player counts, and pagination return 400; unknown games or versions belonging to another
+game return 404; duplicates and unavailable default configurations return 409.
+Catan's 90-minute duration is a demo estimate. The selected edition is a reference configuration,
+not a claim to be the latest edition or to have ingested its rules. Player counts follow
+[CATAN's base-game metadata](https://www.catan.com/catan).
 
 ## Planned API examples
 These are design examples, not implemented endpoints:
