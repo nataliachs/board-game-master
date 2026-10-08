@@ -27,13 +27,19 @@ public class RuleAnswerService {
 
     // Deliberately no transaction: catalog reads finish before any external provider request.
     public RuleAnswer ask(UUID gameId, String question) {
+        return ask(gameId, question, null, null, null);
+    }
+
+    public RuleAnswer ask(UUID gameId, String question, Integer topK, Double threshold, RetrievalFilters filters) {
         if (question == null || question.isBlank() || question.length() > 4000) {
             throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Question must be nonblank and at most 4000 characters");
         }
         long started = System.nanoTime();
         UUID versionId = games.resolveDefaultVersion(gameId, null).getId();
         try {
-            var retrieved = retrieval.search(versionId, question.strip(), null);
+            var retrieved = topK == null && threshold == null && filters == null
+                    ? retrieval.search(versionId, question.strip(), null)
+                    : retrieval.search(versionId, question.strip(), topK, threshold, filters);
             var prompt = prompts.build(versionId, question.strip(), retrieved.matches());
             if (prompt.evidence().stream().noneMatch(m -> strongEnough(m.cosineSimilarity()))) { return fallback(gameId, versionId); }
             long llmStarted = System.nanoTime();
@@ -56,8 +62,12 @@ public class RuleAnswerService {
             }
             double weakest = sources.stream().mapToDouble(RuleAnswer.Source::cosineSimilarity).min().orElse(-1);
             if (sources.isEmpty()) { return fallback(gameId, versionId); }
+            // A convenient subset of strong evidence is not sufficient for HIGH confidence.
+            boolean covered = prompt.evidence().stream().filter(m -> strongEnough(m.cosineSimilarity()))
+                    .allMatch(m -> cited.contains(m.chunkId()));
+            boolean meaningfulQuotes = generated.citations().stream().allMatch(c -> c.quote().strip().length() >= config.minimumQuoteCharacters());
             return new RuleAnswer(gameId, versionId, generated.answer().strip(),
-                    weakest >= config.highEvidenceSimilarity() ? HIGH : MEDIUM, sources);
+                    weakest >= config.highEvidenceSimilarity() && covered && meaningfulQuotes ? HIGH : MEDIUM, sources);
         } finally { LOG.info("Rule question completed: gameId={}, gameVersionId={}, elapsedMs={}",
                 gameId, versionId, (System.nanoTime() - started) / 1_000_000); }
     }

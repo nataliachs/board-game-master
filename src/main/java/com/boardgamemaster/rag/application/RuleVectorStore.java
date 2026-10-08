@@ -21,4 +21,6 @@ public interface RuleVectorStore {
     int store(UUID versionId, UUID documentId, EmbeddingProfile profile, List<VectorWrite> writes);
     boolean hasEmbeddings(UUID versionId, EmbeddingProfile profile);
     List<Match> search(UUID versionId, EmbeddingProfile profile, Embedding query, int limit);
+    boolean hasEmbeddings(UUID versionId, EmbeddingProfile profile, RetrievalFilters filters);
+    List<Match> search(UUID versionId, EmbeddingProfile profile, Embedding query, int limit, RetrievalFilters filters);
 }

@@ -83,8 +83,10 @@ without a provider request. Exact cosine ordering uses deterministic document/ch
 The filtered candidate CTE is materialized so vectors of other dimensions are never evaluated.
 A B-tree index supports version/profile filtering; no ANN index is used at MVP scale, preserving
 exact recall and allowing configurable dimensions (1–2000). HNSW/IVFFlat requires later scale and
-recall evidence. The retrieval endpoint does not apply threshold filtering, reranking or
-deduplication. Basic top-K is configurable (1–50); advanced retrieval improvements remain Milestone 5.
+recall evidence. Milestone 5 applies language/type/document/expansion selection before the
+candidate limit, then similarity thresholding, duplicate suppression, a reranking boundary
+and final top-K (1–50). Metadata SQL remains parameterized and the materialized profile
+candidate CTE continues to isolate dimensions safely. No schema migration is needed.
 
 REST operations expose explicit document indexing/status and version-scoped source matches,
 including document/version IDs, source type/version/language/reference, section/page, offsets
@@ -110,11 +112,15 @@ generated text. No usable evidence skips generation. All these paths return a fi
 LOW confidence and no sources; provider errors retain meaningful HTTP errors instead.
 
 `boardgame.answer.*` defines baseline acceptance gates: minimum similarity 0.5 and HIGH 0.8.
-Accepted answers are HIGH only when all cited chunks reach the HIGH gate; otherwise MEDIUM.
+Accepted answers are HIGH only when all cited chunks reach the HIGH gate, all strong supplied
+evidence is cited and every supporting quote reaches the configured minimum length (12 by default);
+otherwise MEDIUM. Source coverage and quote length reduce inflated confidence from selective
+citations or trivial matches; they still do not establish semantic entailment.
 These gates do not filter the search API or constitute calibrated factual probabilities.
 Model sufficiency is a self-report; exact quotes establish provenance, not semantic entailment
-of every generated claim. Real-model relevance, adversarial robustness, gate calibration and
-production retrieval evaluation remain unverified and belong to later evaluation work.
+of every generated claim. Real-model relevance, adversarial robustness and gate calibration
+remain unverified. Milestone 5 adds deterministic retrieval-only regression evaluation separately
+from generation, not a live-model production-quality benchmark.
 
 The OpenAI adapter uses the Responses API with a strict JSON schema, temperature 0, bounded
 output and `store=false`. It has a fixed HTTPS endpoint, no redirects, bounded connect/request
@@ -124,8 +130,40 @@ array; refusal becomes insufficient evidence and malformed/incomplete output bec
 of embeddings, disabled by default and accepts blank legacy provider/model values. Timing logs
 contain game/version IDs and durations, not prompts, questions, excerpts, answers or keys.
 
-Milestone 5 remains unstarted. Live OpenAI testing for Milestone 3 is still deferred; Milestone 4
+Milestone 6 remains unstarted. Live OpenAI testing for Milestone 3 is still deferred; Milestone 4
 provider interoperability and generated-answer quality are also unverified against live APIs.
+
+`RetrievalFilters` carries normalized language, source types, owned document IDs and explicitly
+selected owned EXPANSION document IDs. Filters intersect and cannot alter the selected ruleset.
+Language defaults to the version's language; no translation or edition switching is performed.
+Unknown/foreign IDs and non-expansion expansion selections fail before embedding calls. Empty
+expansion selection excludes expansion sources. This is a future expansion-integration boundary,
+not an expansion catalog or persisted session configuration.
+
+The candidate limit defaults to 200 (50–500), similarity threshold to 0.5 (−1 to 1). Filtering
+metadata before this limit prevents irrelevant document types from crowding out the requested
+sources. No eligible indexed sources means no query embedding request. After thresholding,
+`RuleDuplicateSuppressor` retains the first normalized identical text within a matching
+version/language/source-type/document-version boundary. Near-contained passages additionally
+require the same document, contained source offsets, substantial five-word-shingle overlap
+(default 0.85) and the retained passage to contain the shorter candidate. A longer passage is
+never dropped in favor of a shorter one. Normalized text/shingles are computed once per candidate.
+Source text is not modified and imports are never deleted. Distinct rules and provenance classes
+remain separate; duplicate suppression is intentionally conservative.
+
+`RuleReranker` is a provider-neutral permutation boundary after deduplication and before top-K.
+The default is deterministic cosine-order preservation. Replacement results must contain the
+original candidate records exactly once, retaining original similarity/provenance; invalid
+results or exceptions return safe `RERANKING_FAILED` (502). No paid reranker is configured.
+Empty eligible pools skip reranking. The bounded pool can underfill top-K after suppression;
+`candidateLimitReached` explicitly signals potential omitted later evidence.
+
+Search diagnostics expose effective filters, threshold, pool limit, stage counts and duration.
+Timing/count logs omit text, keys and raw provider responses. Evaluation fixtures contain original
+Catan fact paraphrases, questions, expected topics/sections and hand-assigned vectors; tests
+exercise actual PostgreSQL retrieval with duplicate imports and foreign game/edition decoys,
+without LLM calls. The generated build report includes per-question diagnostics, Recall@3, MRR@3
+and abstentions. A perfect deterministic score proves pipeline regression behavior only.
 
 HTTP failures share `code`, `message`, UTC `timestamp`, and request `path`.
 MVC advice preserves HTTP status and framework headers; servlet dispatches use the same DTO.

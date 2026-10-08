@@ -6,14 +6,15 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–4 are complete and validated with provider doubles; live OpenAI testing is deferred.**
+**Milestones 0–5 are complete and validated with provider doubles. Live OpenAI testing remains deferred.**
 The application supports generic Game and GameVersion metadata, registration/read APIs,
 default-version selection, and player-count validation. Catan has one seeded reference
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
 for a specific version and read as ordered, traceable chunks. Explicit embedding indexing and
 version-scoped vector retrieval are implemented with opt-in provider configuration.
 Rule questions resolve the game's active default version and return cited answers or a fixed
-insufficient-evidence fallback. Milestone 5 remains unstarted; sessions, TeachingFlow, setup,
+insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
+suppression, a reranking boundary and diagnostics. Milestone 6 remains unstarted; sessions, TeachingFlow, setup,
 voice and browser UI remain planned. Live OpenAI testing for Milestone 3 is still deferred.
 
 - [Master specification](PROJECT_SPEC.md)
@@ -24,7 +25,7 @@ voice and browser UI remain planned. Live OpenAI testing for Milestone 3 is stil
 ## Planned product experience
 
 The sections below describe the intended product, not functionality already available in the
-Milestone 4 application. Current executable setup, API and test instructions are retained below.
+Milestone 5 application. Current executable setup, API and test instructions are retained below.
 
 ## Customer Experience
 
@@ -238,6 +239,9 @@ Active configuration:
 | `EMBEDDING_MAX_INPUT_CHARACTERS` | `4000`; maximum chunk/query UTF-16 length, 1–16000 |
 | `EMBEDDING_MAX_DOCUMENT_CHUNKS` | `1000`; synchronous indexing limit, 1–10000 |
 | `RAG_TOP_K` | `5`; default retrieved match count, 1–50 |
+| `RAG_SIMILARITY_THRESHOLD` | `0.5`; minimum cosine similarity, finite −1 to 1; blank legacy values use the default |
+| `RAG_CANDIDATE_LIMIT` | `200`; candidates considered before deduplication/reranking, 50–500 |
+| `RAG_DUPLICATE_OVERLAP` | `0.85`; minimum five-word-shingle overlap for contained source ranges, 0.5–1 |
 | `LLM_PROVIDER` | `disabled`; set `openai` to enable answer generation |
 | `LLM_MODEL` | `gpt-4.1-mini`; must support Responses structured outputs and temperature |
 | `LLM_API_KEY` | Required when the LLM is enabled; private and independent of the embedding key setting |
@@ -246,8 +250,9 @@ Active configuration:
 | `ANSWER_MINIMUM_EVIDENCE_SIMILARITY` | `0.5`; baseline acceptance gate for cited evidence, 0 to below the HIGH gate |
 | `ANSWER_HIGH_EVIDENCE_SIMILARITY` | `0.8`; HIGH confidence gate, above the minimum and at most 1 |
 | `ANSWER_MAX_CONTEXT_CHARACTERS` | `24000`; serialized question/evidence budget, 1000–160000 UTF-16 characters |
+| `ANSWER_MINIMUM_QUOTE_CHARACTERS` | `12`; minimum supporting quote length for HIGH confidence, 1–1000 |
 
-Speech, `AI_*`, `RAG_SIMILARITY_THRESHOLD` and `RAG_CHUNK_*` settings remain reserved.
+Speech, `AI_*` and `RAG_CHUNK_*` settings remain reserved.
 Embedding settings and `RAG_TOP_K` are active. No provider keys are needed for ingestion,
 startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
@@ -444,7 +449,8 @@ apply the pending migrations before using these endpoints. The implementation ch
 
 These endpoints retrieve evidence only. They do not produce a generated answer, confidence label,
 teaching flow or session. Search returns source metadata and `cosineSimilarity` (−1 to 1), which
-measures vector alignment rather than confidence or factual correctness. No threshold is applied.
+measures vector alignment rather than confidence or factual correctness. Retrieval applies the
+configured similarity threshold, metadata filtering and duplicate suppression before final top-K.
 Unknown/wrong-version sources return 404, invalid input 400, an indexing size limit 413 and
 storage conflicts 409. Disabled/unavailable/rate-limited providers return safe 503 errors,
 provider timeouts 504 and invalid responses 502. Rule text and raw provider errors are not logged.
@@ -485,7 +491,7 @@ $search = @{ query = 'What happens when my token reaches the last space?'; topK 
 ```
 
 Expected: indexed counts equal total chunks, and search returns only this selected version's
-sources, ranked by exact cosine similarity with stable tie ordering. An empty index returns an
+eligible sources above the similarity threshold, with stable cosine tie ordering by default. An empty index returns an
 empty match list without a query embedding call. Repeated indexing reuses existing profile vectors.
 Changing provider/model/dimensions selects a different vector space; old vectors remain stored,
 but each document must be indexed for the new profile before it contributes search results.
@@ -497,6 +503,76 @@ to the selected provider.
 Storage uses pgvector with a version/profile B-tree filter index and exact search, avoiding ANN
 recall loss at current scale. See [pgvector's exact search documentation](https://github.com/pgvector/pgvector/tree/v0.8.2#querying).
 Tests use fixed known vectors and local fake HTTP responses, independent of LLMs and API keys.
+
+## Retrieval filters, ranking and evaluation
+
+Both search and question requests accept optional `topK`, `similarityThreshold` and `filters`.
+Existing bodies containing only `query` or `question` still work, with the new safe retrieval
+defaults. Example for `/api/v1/game-versions/{versionId}/rules/search`:
+
+```json
+{
+  "query": "What happens when my token reaches the last space?",
+  "topK": 3,
+  "similarityThreshold": 0.5,
+  "filters": {
+    "language": "en",
+    "sourceTypes": ["RULEBOOK", "FAQ", "ERRATA"],
+    "documentIds": [],
+    "expansionDocumentIds": []
+  }
+}
+```
+
+For questions, replace `query` with `question`; the game still resolves its default version.
+Omitted language uses the selected version's language. Language tags are normalized; filtering
+does not translate text or switch editions. Source types are RULEBOOK/FAQ/ERRATA/EXPANSION.
+Each ID/type set is limited to 50 entries; empty sets mean no additional restriction, except
+an empty `expansionDocumentIds` always excludes EXPANSION documents. All filters intersect.
+
+`documentIds` must belong to the selected version; unknown/foreign IDs return 404 before a
+provider call. To include expansion rules, explicitly provide owned EXPANSION document IDs in
+`expansionDocumentIds`; selecting a base document there returns 400. An EXPANSION source-type
+filter alone does not enable expansions. This is an expansion-ready document selection boundary,
+not a session, expansion catalog or automatic expansion activation feature.
+
+Metadata constraints run in parameterized SQL before the bounded cosine candidate selection.
+If no eligible indexed document exists, no query-provider call occurs. The active vector profile
+and version remain mandatory regardless of filters. The candidate pool is thresholded, then
+deduplicated, passed through `RuleReranker` and finally limited to top-K. The default reranker
+preserves cosine order; no cross-encoder or paid reranking model is installed. A replacement
+must return a permutation of the original candidates without altered scores/provenance;
+invalid output or failure returns safe 502 `RERANKING_FAILED`.
+
+Duplicate suppression retains the best-ranked occurrence of NFC/whitespace-normalized identical
+text within the same version/language/source type/document version. It also suppresses substantial
+contained passages in the same document when the retained passage contains the shorter candidate's source range and their
+five-word shingle overlap reaches the configured limit. Short variants, negation/number changes,
+different source types, languages and document versions remain distinct. A longer passage is never
+dropped in favor of a shorter one. No imports are deleted.
+
+Search responses add `diagnostics`: effective filters/threshold/candidate limit, candidate count,
+below-threshold count, duplicates removed, returned count, elapsed milliseconds and
+`candidateLimitReached`. Logs record counts/IDs/timing without question/document text.
+The bounded pool may return fewer than top-K results if many candidates are weak/duplicate;
+reaching its limit signals that later eligible evidence may have been omitted. This is exact
+cosine selection within a bounded pool, not a guarantee of exhaustive deduplicated recall.
+
+`src/test/resources/evaluation/catan-rule-questions.json` contains original narrow test paraphrases,
+expected topics/sections, six supported questions and two unsupported questions. The integration
+evaluation imports these into isolated PostgreSQL, adds duplicate imports and foreign rulesets,
+and checks retrieval independently of generation. No commercial rulebook or paid calls are used.
+Run with Docker Desktop available:
+
+```powershell
+.\gradlew.bat integrationTest --tests '*RetrievalEvaluationIntegrationTest' --rerun-tasks
+```
+
+The test writes `build/reports/retrieval-evaluation.json` with per-question diagnostics, Recall@3,
+MRR@3 and unsupported-question abstentions. See development status for the actual recorded run.
+Hand-assigned vectors make this a deterministic pipeline regression benchmark; it does not
+measure OpenAI embedding relevance, hallucination rate or production confidence calibration.
+Live OpenAI testing for Milestones 3 and 4 remains deferred.
 
 ## Implemented rule question API
 
@@ -553,14 +629,17 @@ Confidence is a baseline evidence heuristic, not a calibrated probability. With 
 meeting the minimum gate, generation is skipped. The model must also report sufficient evidence;
 every returned citation must identify a supplied chunk, quote its exact content and meet the
 minimum gate. Unknown/excluded citations, invented quotes or duplicate citations fail closed.
-Accepted answers are HIGH only if every cited chunk meets the HIGH gate; otherwise MEDIUM.
+Accepted answers are HIGH only if every cited chunk meets the HIGH gate, all strong prompt
+evidence is cited, and every quote meets `ANSWER_MINIMUM_QUOTE_CHARACTERS`; otherwise MEDIUM.
+This conservatively downgrades partial evidence coverage and trivial quotes.
 Empty/weak evidence, refusal or failed citation checks return HTTP 200, LOW, no sources and:
 
 > I couldn't verify that confidently from the available rules.
 
-The search endpoint itself retains all top-K matches; these answer gates do not introduce
-Milestone 5 retrieval filtering, reranking, deduplication or evaluation infrastructure. Real-model
-relevance, threshold calibration and resistance to adversarial prompts remain unverified. Exact
+Retrieval now filters weak matches and duplicates before the answer prompt is built. Its threshold
+and the separate answer acceptance gates both apply, so lowering the retrieval threshold alone
+does not allow weak cited evidence into an answer. Real-model relevance, threshold calibration
+and resistance to adversarial prompts remain unverified. Exact
 quotes validate provenance but cannot prove that all generated prose is semantically supported.
 Live OpenAI testing for Milestone 3 remains deferred, and live Milestone 4 testing is also deferred.
 
@@ -594,13 +673,13 @@ Content-Type: application/json
 - [x] Milestone 2 — Rule Documents + Ingestion
 - [x] Milestone 3 — Embeddings + Vector Search
 - [x] Milestone 4 — RAG Question Answering
-- [ ] Milestone 5 — Production-Quality RAG
+- [x] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 5 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 6 is unstarted.
 
 ## Adding a game
 

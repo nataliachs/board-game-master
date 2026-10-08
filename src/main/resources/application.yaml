@@ -52,6 +52,7 @@ boardgame:
     minimum-evidence-similarity: ${ANSWER_MINIMUM_EVIDENCE_SIMILARITY:0.5}
     high-evidence-similarity: ${ANSWER_HIGH_EVIDENCE_SIMILARITY:0.8}
     max-context-characters: ${ANSWER_MAX_CONTEXT_CHARACTERS:24000}
+    minimum-quote-characters: ${ANSWER_MINIMUM_QUOTE_CHARACTERS:12}
   embedding:
     provider: ${EMBEDDING_PROVIDER:disabled}
     model: ${EMBEDDING_MODEL:text-embedding-3-small}
@@ -62,6 +63,9 @@ boardgame:
     max-document-chunks: ${EMBEDDING_MAX_DOCUMENT_CHUNKS:1000}
   rag:
     top-k: ${RAG_TOP_K:5}
+    similarity-threshold: ${RAG_SIMILARITY_THRESHOLD:0.5}
+    candidate-limit: ${RAG_CANDIDATE_LIMIT:200}
+    duplicate-overlap: ${RAG_DUPLICATE_OVERLAP:0.85}
   rules:
     chunk-size: ${RULE_CHUNK_SIZE:1200}
     chunk-overlap: ${RULE_CHUNK_OVERLAP:200}

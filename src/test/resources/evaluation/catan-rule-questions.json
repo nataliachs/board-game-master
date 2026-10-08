@@ -1,0 +1,19 @@
+{
+  "description": "Original narrow paraphrases of rule facts for deterministic pipeline evaluation, not an official rulebook or a live-model relevance benchmark. Vectors are hand assigned; no commercial text is copied.",
+  "documents": [
+    {"key":"settlement","section":"Settlement points","text":"A settlement is worth one victory point.","vector":[1,0,0,0]},
+    {"key":"road","section":"Road construction","text":"Building a road costs one brick and one lumber.","vector":[0,1,0,0]},
+    {"key":"robber","section":"Rolling seven","text":"When a seven is rolled, players with more than seven resource cards discard half, rounded down.","vector":[0,0,1,0]},
+    {"key":"production","section":"City production","text":"A city receives two resources from each adjacent producing terrain hex.","vector":[0,0,0,1]}
+  ],
+  "questions": [
+    {"question":"How many victory points is a settlement worth?","vector":[1,0,0,0],"expectedTopics":["settlement"],"mustRetrieveSection":"Settlement points"},
+    {"question":"What resources do I pay to build a road?","vector":[0,1,0,0],"expectedTopics":["road"],"mustRetrieveSection":"Road construction"},
+    {"question":"Who discards resource cards when seven is rolled?","vector":[0,0,1,0],"expectedTopics":["robber"],"mustRetrieveSection":"Rolling seven"},
+    {"question":"How much does a city produce?","vector":[0,0,0,1],"expectedTopics":["production"],"mustRetrieveSection":"City production"},
+    {"question":"How much is my settlement worth toward winning?","vector":[0.95,0.1,0,0],"expectedTopics":["settlement"],"mustRetrieveSection":"Settlement points"},
+    {"question":"Does my city give me double resources?","vector":[0,0,0.1,0.95],"expectedTopics":["production"],"mustRetrieveSection":"City production"},
+    {"question":"Can I teleport a settlement?","vector":[-1,-1,-1,-1],"expectedTopics":[],"mustRetrieveSection":null},
+    {"question":"How many laser cannons can I buy?","vector":[-1,0,0,0],"expectedTopics":[],"mustRetrieveSection":null}
+  ]
+}

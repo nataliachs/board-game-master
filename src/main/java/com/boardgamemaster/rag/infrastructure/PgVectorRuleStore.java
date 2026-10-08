@@ -5,6 +5,8 @@ import com.boardgamemaster.ai.EmbeddingProfile;
 import com.boardgamemaster.rag.application.*;
 import com.boardgamemaster.rules.domain.RuleSourceType;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,13 +65,29 @@ public class PgVectorRuleStore implements RuleVectorStore {
     }
 
     @Override public boolean hasEmbeddings(UUID versionId, EmbeddingProfile p) {
+        return hasEmbeddings(versionId, p, RetrievalFilters.none());
+    }
+
+    @Override public boolean hasEmbeddings(UUID versionId, EmbeddingProfile p, RetrievalFilters filters) {
+        var parameters = new ArrayList<Object>(List.of(versionId, p.provider(), p.model(), p.dimensions()));
+        String filterSql = filterSql(filters, parameters);
         return Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM rule_chunk_embeddings WHERE game_version_id=? AND provider=? AND model=? AND dimensions=?)
-                """, Boolean.class, versionId, p.provider(), p.model(), p.dimensions()));
+                SELECT EXISTS(SELECT 1 FROM rule_chunk_embeddings e
+                JOIN rule_chunks c ON c.id=e.chunk_id AND c.game_version_id=e.game_version_id
+                JOIN rule_documents d ON d.id=c.document_id AND d.game_version_id=c.game_version_id
+                WHERE e.game_version_id=? AND e.provider=? AND e.model=? AND e.dimensions=?
+                """ + filterSql + ")", Boolean.class, parameters.toArray()));
     }
 
     @Override public List<Match> search(UUID versionId, EmbeddingProfile p, Embedding query, int limit) {
+        return search(versionId, p, query, limit, RetrievalFilters.none());
+    }
+
+    @Override public List<Match> search(UUID versionId, EmbeddingProfile p, Embedding query, int limit, RetrievalFilters filters) {
         query.requireDimensions(p.dimensions());
+        var parameters = new ArrayList<Object>(List.of(versionId, p.provider(), p.model(), p.dimensions(), literal(query), versionId));
+        String filterSql = filterSql(filters, parameters);
+        parameters.add(limit);
         return jdbc.query("""
                 WITH candidates AS MATERIALIZED (
                     SELECT chunk_id, embedding FROM rule_chunk_embeddings
@@ -80,15 +98,34 @@ public class PgVectorRuleStore implements RuleVectorStore {
                 FROM candidates e JOIN rule_chunks c ON c.id=e.chunk_id
                 JOIN rule_documents d ON d.id=c.document_id AND d.game_version_id=c.game_version_id
                 WHERE c.game_version_id=?
-                ORDER BY similarity DESC,c.document_id,c.chunk_index,c.id LIMIT ?
-                """, (r, n) -> new Match(r.getObject("id", UUID.class), r.getObject("document_id", UUID.class),
+                """ + filterSql + " ORDER BY similarity DESC,c.document_id,c.chunk_index,c.id LIMIT ?", (r, n) -> new Match(r.getObject("id", UUID.class), r.getObject("document_id", UUID.class),
                 r.getObject("game_version_id", UUID.class), r.getString("content"), r.getString("document_name"),
                 RuleSourceType.valueOf(r.getString("source_type")), r.getString("document_version"), r.getString("language"),
                 r.getString("source_reference"), r.getString("section_title"), r.getObject("page_number", Integer.class),
                 r.getInt("chunk_index"), r.getInt("start_offset"), r.getInt("end_offset"),
                 Math.max(-1, Math.min(1, r.getDouble("similarity")))),
-                versionId, p.provider(), p.model(), p.dimensions(), literal(query), versionId, limit);
+                parameters.toArray());
     }
+
+    private String filterSql(RetrievalFilters filters, List<Object> parameters) {
+        var sql = new StringBuilder();
+        if (filters.language() != null) { sql.append(" AND d.language=?"); parameters.add(filters.language()); }
+        if (!filters.sourceTypes().isEmpty()) {
+            sql.append(" AND d.source_type IN (").append(placeholders(filters.sourceTypes())).append(")");
+            filters.sourceTypes().forEach(t -> parameters.add(t.name()));
+        }
+        if (!filters.documentIds().isEmpty()) {
+            sql.append(" AND d.id IN (").append(placeholders(filters.documentIds())).append(")");
+            parameters.addAll(filters.documentIds());
+        }
+        if (filters.expansionDocumentIds().isEmpty()) { sql.append(" AND d.source_type <> 'EXPANSION'"); }
+        else {
+            sql.append(" AND (d.source_type <> 'EXPANSION' OR d.id IN (").append(placeholders(filters.expansionDocumentIds())).append("))");
+            parameters.addAll(filters.expansionDocumentIds());
+        }
+        return sql.toString();
+    }
+    private String placeholders(Collection<?> values) { return String.join(",", java.util.Collections.nCopies(values.size(), "?")); }
 
     private static String literal(Embedding value) {
         return value.values().stream().map(Object::toString).collect(Collectors.joining(",", "[", "]"));

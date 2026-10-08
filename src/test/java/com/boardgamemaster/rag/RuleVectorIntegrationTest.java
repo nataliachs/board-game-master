@@ -89,7 +89,7 @@ class RuleVectorIntegrationTest {
         var indexed = indexing.index(version, document.getId());
         assertThat(indexed.totalChunks()).isEqualTo(4);
         assertThat(indexed.newlyIndexedChunks()).isEqualTo(4);
-        var results = retrieval.search(version, "alpha", 3).matches();
+        var results = retrieval.search(version, "alpha", 3, -1d, null).matches();
         assertThat(results).hasSize(3);
         assertThat(results).extracting(RuleVectorStore.Match::sectionTitle).containsExactly("Alpha", "Near", "Beta");
         assertThat(results.get(0).cosineSimilarity()).isCloseTo(1, within(.000001));
@@ -116,7 +116,7 @@ class RuleVectorIntegrationTest {
         store.store(chosen, target.getId(), new EmbeddingProfile("other", "known-vectors", 3), List.of(new RuleVectorStore.VectorWrite(chunk, vector("alpha"))));
         store.store(chosen, target.getId(), new EmbeddingProfile("fixture", "other-model", 3), List.of(new RuleVectorStore.VectorWrite(chunk, vector("alpha"))));
         store.store(chosen, target.getId(), new EmbeddingProfile("fixture", "known-vectors", 2), List.of(new RuleVectorStore.VectorWrite(chunk, new Embedding(List.of(1f, 0f)))));
-        assertThat(retrieval.search(chosen, "alpha", 50).matches()).hasSize(1).allSatisfy(m -> {
+        assertThat(retrieval.search(chosen, "alpha", 50, -1d, null).matches()).hasSize(1).allSatisfy(m -> {
             assertThat(m.documentId()).isEqualTo(target.getId());
             assertThat(m.gameVersionId()).isEqualTo(chosen);
             assertThat(m.cosineSimilarity()).isCloseTo(0, within(.000001));

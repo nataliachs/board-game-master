@@ -90,6 +90,16 @@ class RuleAnswerServiceTest {
                 List.of(new LlmResponse.Citation(strong.chunkId(), "Move one space."), new LlmResponse.Citation(medium.chunkId(), "Move one space."))));
         assertThat(answers.ask(game, question).confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
     }
+    @Test void uncitedStrongEvidenceCapsConfidenceAtMedium() {
+        var first = match(1); var competing = match(.9); evidence(List.of(first, competing));
+        when(llm.generate(any())).thenReturn(response(first));
+        assertThat(answers.ask(game, question).confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+    }
+    @Test void TrivialQuoteCannotProduceHighConfidence() {
+        var first = match(1); evidence(List.of(first));
+        when(llm.generate(any())).thenReturn(new LlmResponse("Move one space.", true, List.of(new LlmResponse.Citation(first.chunkId(), "Move"))));
+        assertThat(answers.ask(game, question).confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+    }
     @Test void providerFailureIsNotDisguisedAsLowConfidence() {
         evidence(List.of(match(1))); var failure = new LlmException(LlmException.Code.LLM_TIMEOUT, "Safe timeout");
         when(llm.generate(any())).thenThrow(failure);
