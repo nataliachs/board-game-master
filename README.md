@@ -14,8 +14,8 @@ default-version selection, and player-count validation. Catan has one seeded ref
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
 for a specific version and read as ordered, traceable chunks. Explicit embedding indexing and
 version-scoped vector retrieval are implemented with opt-in provider configuration.
-Rule questions resolve the game's active default version and return cited answers or a fixed
-insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
+Stateless rule questions resolve the game's active default version; session questions use their
+pinned version. Both return cited answers or a fixed insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
 suppression, a reranking boundary and diagnostics. Milestone 6 adds persistent sessions, version-bound
 TeachingFlow, progressive lessons and bounded conversation context. Milestone 7 adds persisted
 guided setup with teaching interruption/resume. Voice and browser UI remain planned for Milestone 8.
@@ -25,10 +25,11 @@ guided setup with teaching interruption/resume. Voice and browser UI remain plan
 - [Development status](docs/DEVELOPMENT_STATUS.md)
 - [Architecture and profiles](docs/ARCHITECTURE.md)
 
-## Planned product experience
+## Product experience
 
-The sections below describe the intended product, not functionality already available in the
-current application in its entirety. Current executable setup, API and test instructions are retained below.
+The teaching → guided setup → resumed teaching → playing journey is implemented through the
+backend APIs and Swagger. The sections below describe those capabilities and mark future work
+explicitly. Voice and the customer-facing browser UI belong to Milestone 8 and remain unstarted.
 
 ## Customer Experience
 
@@ -65,7 +66,9 @@ The backend tracks TeachingFlow state so customers can:
 - ask a clarification question
 - resume learning afterward
 
-Questions will be answered using Retrieval-Augmented Generation (RAG) against verified game-rule documents.
+Questions use Retrieval-Augmented Generation (RAG) against imported, permitted rule documents.
+Live answering requires indexed documents and explicitly enabled embedding/LLM providers.
+Teaching and setup instructions alone are not indexed rule evidence.
 
 ## Guided Setup
 
@@ -73,7 +76,9 @@ Setup is integrated into the teaching experience.
 
 The backend tracks setup state independently from the LLM through version-bound authored steps.
 
-This allows customers to be guided step-by-step through physically preparing the game before gameplay begins.
+Customers follow authored steps and confirm completion before returning to the saved teaching
+lesson. The application records their confirmation; it cannot inspect the physical board.
+Legacy teaching flows without a setup trigger retain their earlier behavior.
 
 ## During the Game
 
@@ -148,6 +153,10 @@ Generate Grounded Answer
 
 Return Answer + Sources
 
+Session questions load the pinned GameVersion and bounded context; the stateless question
+endpoint resolves the current active default without loading a session. Empty or weak evidence
+can return the fixed LOW-confidence fallback without generation.
+
 The system should prefer saying it cannot confidently verify a rule rather than inventing one.
 
 ## Teaching depth and session stages
@@ -164,11 +173,11 @@ lesson/setup positions control progress; the LLM does not decide the next step. 
 chooses what comes next; RAG supplies verified rule evidence. Clarifications preserve both
 lesson and setup progress. The planned browser UI will provide Review Rules without resetting the session.
 
-## Planned architecture
+## Architecture and planned interfaces
 
 ```mermaid
 flowchart TD
-  Client[Thin Thymeleaf UI or API client] --> API[Spring Boot API]
+  Client[API client or Swagger; Thymeleaf UI planned] --> API[Spring Boot API]
   API --> Games[Game and GameVersion]
   API --> Sessions[Sessions and bounded conversation]
   API --> Teaching[Generic TeachingFlow engine]
@@ -176,7 +185,7 @@ flowchart TD
   Setup --> Teaching
   Teaching --> Sessions
   API --> Setup
-  API --> Voice[STT and TTS adapters]
+  API --> Voice[STT and TTS adapters - planned]
   Voice --> Sessions
   Sessions --> RAG[Generic RAG pipeline]
   RAG --> Retrieval[Version-scoped retrieval]
@@ -185,12 +194,18 @@ flowchart TD
   Retrieval --> Embeddings[Embedding adapter]
 ```
 
-Ingestion: permitted source → extraction/cleanup → semantic chunks → embeddings → version-scoped storage.
+Ingestion: permitted UTF-8 text/Markdown → cleanup → structural chunks → explicit embedding indexing → version-scoped storage.
 Question answering: resolve ruleset → query embedding → filtered retrieval/ranking → evidence prompt → grounded answer and citations.
 
-## Planned stack
+## Stack
 
-Java 21+, Spring Boot Web/Data JPA/Validation, PostgreSQL + pgvector, Flyway, Docker Compose, Gradle, OpenAPI, JUnit 5, Mockito, and Testcontainers. Provider abstractions cover LLM, embeddings, STT, and TTS. Phase 5 / Milestone 8 adds Thymeleaf, HTML/CSS and minimal JavaScript. UI controllers reuse backend application services; templates and JavaScript do not implement workflow, RAG or game logic.
+Implemented: Java 21, Spring Boot Web/Data JPA/Validation, PostgreSQL + pgvector, Flyway,
+Docker Compose, the Gradle wrapper, OpenAPI/Swagger, JUnit 5, Mockito and Testcontainers.
+Embedding and LLM integrations use provider-neutral interfaces.
+
+Planned for Milestone 8: STT/TTS interfaces and adapters, plus a thin Thymeleaf UI with HTML/CSS
+and minimal JavaScript. Future UI controllers will reuse backend services; templates and
+JavaScript will not own workflow, RAG or game logic.
 
 ## Local setup
 
@@ -258,7 +273,7 @@ Active configuration:
 | `SESSION_CONTEXT_CHARACTERS` | `8000`; whole recent-message content budget, 1000–16000 |
 
 Speech, `AI_*` and `RAG_CHUNK_*` settings remain reserved.
-Embedding settings and `RAG_TOP_K` are active. No provider keys are needed for ingestion,
+Embedding, retrieval (`RAG_*` except `RAG_CHUNK_*`), LLM, answer and session settings in the table are active. No provider keys are needed for ingestion,
 startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
 proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer/session limits fail startup. Add optional
@@ -273,7 +288,8 @@ validation. V1 installs pgvector; V2 creates the catalog tables and constraints;
 V3 adds Catan reference metadata; V4 adds version-scoped rule documents and chunks.
 Restart an already-running application to pick up the new code and migrations.
 V5 adds embedding storage and its ruleset/profile index. Existing database volumes should be
-retained. No rules or embeddings are seeded automatically; existing documents stay unindexed.
+retained. No rule documents or embeddings are seeded automatically; existing imports keep
+their stored vectors, and unindexed documents require explicit indexing.
 V6 adds sessions, conversation history and version-bound teaching, including original introductory
 Catan lessons. V7 adds setup flows/steps, persisted session setup progress and a setup trigger
 in a new reference teaching flow. Existing lessons, sessions, history, documents and vectors are retained.
@@ -305,7 +321,14 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 ```
 
 Health should contain `"status":"UP"`. Swagger documents catalog, rules, retrieval, questions,
-sessions and teaching operations. See development status for dated validation and current totals.
+sessions, teaching and guided setup operations. The recorded Milestone 7 `check bootJar` run
+passed 279 tests (192 unit, 87 integration) with no failures or skips. This is the existing
+implementation validation, not a fresh run for this README review. See development status
+for the dated evidence and evaluation limitations.
+
+The existing GitHub Actions workflow runs `check bootJar` on pull requests targeting `main`,
+pushes to `main`, and manual dispatch. New tests are discovered automatically; no OpenAI secrets
+are required. A push to a milestone branch alone does not trigger this workflow.
 
 ## Implemented catalog API
 
@@ -514,7 +537,9 @@ Tests use fixed known vectors and local fake HTTP responses, independent of LLMs
 
 ## Retrieval filters, ranking and evaluation
 
-Both search and question requests accept optional `topK`, `similarityThreshold` and `filters`.
+Version-scoped search and stateless game-question requests accept optional `topK`,
+`similarityThreshold` and `filters`. Session message requests accept only `question` and use
+configured retrieval defaults; these per-request filter overrides do not apply to them.
 Existing bodies containing only `query` or `question` still work, with the new safe retrieval
 defaults. Example for `/api/v1/game-versions/{versionId}/rules/search`:
 
@@ -608,7 +633,7 @@ LLM_API_KEY=your-private-api-key
 
 Both embedding and LLM providers are opt-in. Blank legacy LLM settings remain disabled/default.
 Restart after configuration changes. No extra database migration is needed for Milestone 4;
-Milestone 6 adds Flyway V6 for sessions and teaching. Requests with indexed rules may incur a query-embedding charge and an
+V6 adds sessions/teaching and V7 adds guided setup. Requests with indexed rules may incur a query-embedding charge and an
 LLM charge. Default tests require neither keys nor paid calls. A private key may be used in both
 key settings if it has appropriate permissions, but each setting must be configured explicitly.
 
@@ -702,7 +727,9 @@ saving this lesson as the return position without completing it. PREVIOUS preser
 the first lesson. REPEAT returns the saved explanation. EXPLAIN_AGAIN presents the same authored
 content with its examples/tips, without an LLM rewrite or progress change. Every action updates
 the revision; stale requests return `SESSION_CONFLICT` (409). Reload with GET before retrying.
-The last CONTINUE enters PLAYING in the same session and displays a ready-to-play notice.
+Once required triggered setup is confirmed, the final teaching CONTINUE enters PLAYING in the
+same session and displays a ready-to-play notice. A final lesson that triggers unfinished setup
+enters SETUP first; completing setup returns to TEACHING before that final Continue.
 Lesson navigation is restricted to TEACHING. Setup completion returns to the saved lesson in
 TEACHING; a further CONTINUE advances normally. A completed setup trigger does not run twice.
 
@@ -716,7 +743,8 @@ $reply | ConvertTo-Json -Depth 10
 $lesson = Invoke-RestMethod -Uri "$base/sessions/$sessionId"
 ```
 
-Use `question`, not `message`. Questions preserve the current lesson and completed sections.
+Use `question`, not `message`. Questions preserve the current lesson, completed sections,
+setup step, confirmed setup steps and saved teaching return point.
 The response contains `sessionId`, new `revision`, `currentSectionKey` and the existing nested
 `answer`/confidence/sources contract. Successful answers and LOW fallbacks persist an atomic
 USER/ASSISTANT pair, including source citations. Provider failures persist neither message and
@@ -726,11 +754,12 @@ not automatically imported or indexed as rule evidence. With providers disabled,
 the existing safe 503 errors; teaching continues to work.
 
 `SessionContextService` loads game, pinned edition/language, player count, depth, stage, current
-lesson and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8` (2–50) and
+lesson, active setup step during SETUP and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8` (2–50) and
 `SESSION_CONTEXT_CHARACTERS=8000` (1000–16000). They are optional additions to a private `.env`;
 omitting them uses defaults. Only whole recent messages within both limits are retained.
-The retrieval query includes the current question, latest retained user question and lesson title,
-capped at 4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
+The retrieval query preserves the current question, then adds the active setup title (during SETUP),
+latest retained user question and lesson title within the available budget. It is capped at
+4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
 Older answers, lesson text and the current setup instruction are untrusted context, never substitutes for source evidence.
 The existing serialized prompt budget also applies and can further remove older context to preserve evidence.
 The limited live walkthrough demonstrated one follow-up; broader live-model understanding remains
@@ -769,11 +798,11 @@ For another game/version, publish a flow with
   "name": "Original demo lessons",
   "sections": [
     {
-      "key": "OBJECTIVE", "order": 0, "title": "Your goal",
-      "explanation": "Move your token to the final space to win.",
+      "key": "TAKING_A_TURN", "order": 0, "title": "Taking a turn",
+      "explanation": "Move your token forward one space. If the destination contains another token, move to the next empty space instead.",
       "depths": ["QUICK", "STANDARD", "DETAILED"],
-      "examples": ["Check the final space before your first turn."],
-      "tips": [], "references": ["Original sample: objective section"]
+      "examples": [],
+      "tips": [], "references": ["Lantern Trail: Taking a turn"]
     }
   ]
 }
@@ -865,8 +894,11 @@ engine executes these two steps and returns to PREPARE. A second Continue moves 
 next finishes teaching. Existing sessions keep their earlier flows and progress. This demonstrates
 generic setup without changing shared code or requiring paid Q&A.
 
-GET the setup-flows publication URL to inspect its latest configuration. Publications are immutable,
-version-bound, and contain 1–100 uniquely keyed/ordered steps; title/instruction are required,
+GET the setup-flows publication URL to inspect its latest configuration. If the session has no
+pinned flow and its version has no configured setup flow, GET `/sessions/{id}/setup` returns
+409 `SETUP_FLOW_NOT_FOUND`. Publications are immutable,
+version-bound, and contain 1–100 steps with unique uppercase keys and nonnegative unique orders;
+title/instruction are required,
 notes/warnings optional. Teaching flows allow at most one setup trigger, applicable to all three
 depths so QUICK cannot skip required setup. Missing setup configuration for a trigger returns 409.
 New sessions pin the current setup flow when configured. Legacy sessions without a pin may choose
@@ -883,7 +915,7 @@ their existing behavior and can enter PLAYING without a recorded setup confirmat
 - [x] Milestone 4 — RAG Question Answering
 - [x] Milestone 5 — Production-Quality RAG
 - [x] Milestone 6 — Game Sessions + Teaching Flow
-- [ ] Milestone 7 — Guided Setup Integrated with Teaching
+- [x] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
