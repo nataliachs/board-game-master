@@ -34,14 +34,14 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-The product direction is planned behavior. Milestones 0–4 are complete and validated with
+The product direction is planned behavior. Milestones 0–5 are complete and validated with
 provider doubles. Teaching, sessions, setup, voice and browser UI are not implemented yet.
 
 ## Current Milestone
 
-**Milestone 4 — RAG Question Answering (complete and validated with provider doubles)**
+**Milestone 5 — Production-Quality RAG (complete and validated with provider doubles)**
 
-Milestone 5 remains unstarted. Live OpenAI testing for Milestone 3 is deferred.
+Milestone 6 remains unstarted. Live OpenAI testing for Milestones 3 and 4 remains deferred.
 
 ## Milestones
 
@@ -50,7 +50,7 @@ Milestone 5 remains unstarted. Live OpenAI testing for Milestone 3 is deferred.
 - [x] Milestone 2 — Rule Documents + Ingestion
 - [x] Milestone 3 — Embeddings + Vector Search
 - [x] Milestone 4 — RAG Question Answering
-- [ ] Milestone 5 — Production-Quality RAG
+- [x] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
@@ -152,7 +152,7 @@ Expected:
 
 ## Milestone 5 — Production-Quality RAG
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Complete and validated with deterministic provider doubles. Live-model quality remains unverified.
 
 Expected:
 
@@ -287,10 +287,16 @@ The application should be demonstrable without Swagger or Postman.
 - Empty/weak evidence skips generation; refusal or invalid citations discards generated text. Provider outages retain safe meaningful errors.
 - Unit provider/prompt/confidence tests and isolated real-HTTP/PostgreSQL question pipeline tests, including permitted original Catan input.
 
-Milestone 5 remains unstarted. No reranking, production retrieval evaluation, metadata filters,
-sessions, teaching, setup, voice or browser UI were implemented. Work remains on
-`milestone-4-rag-question-answering`. No commit, push, staging operation or branch change was
-performed during Milestone 4 work. Live OpenAI testing for Milestone 3 remains deferred.
+- Version/profile-scoped language, source type, document and explicit expansion-document filters applied before candidate selection.
+- Configurable top-K, similarity threshold, bounded candidate pool, conservative duplicate suppression and replaceable validated reranking boundary.
+- Search diagnostics expose stage counts, effective filters/thresholds, timing and candidate-limit saturation without logging text.
+- HIGH answer confidence additionally requires complete strong-evidence citation coverage and meaningful quote lengths.
+- Checked-in original Catan question/corpus evaluation fixtures, deterministic retrieval-only metrics and isolated regression tests.
+
+Milestone 6 remains unstarted. No sessions, teaching, setup, voice or browser UI were implemented.
+Work remains on `milestone-5-production-quality-rag`. No commit, push, staging operation or
+branch change was performed during Milestone 5 work. Live OpenAI testing for Milestones 3 and 4
+remains deferred; this implementation makes no live-model quality claims.
 
 ## Major Architectural Decisions
 
@@ -312,11 +318,11 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Rule documents belong to a GameVersion; chunks reference both document and version through a composite FK. The owning game/edition resolves through GameVersion. No redundant game ID or embedding fields are introduced.
 - Structural chunking uses ATX Markdown headings and paragraphs, with sentence/word fallback. It is deterministic and does not call AI. Fenced code remains text; this is not a full Markdown renderer. Overlap is a maximum budget and may be zero when no whole trailing part fits.
 - Optional standalone `<!-- page: N -->` markers provide explicit page metadata; unknown pages remain null. Stored normalized text retains markers, while chunks exclude them. Source offsets are zero-based UTF-16 with exclusive ends, matching Java and JavaScript substring indexing.
-- Ingestion uses validated `boardgame.rules.*` / `RULE_*` settings: 1200-character chunks, 200-character overlap budget, 1 MiB input limit and 10000 chunks by default. Servlet file/request limits remain 10 MiB. `RAG_TOP_K` is active for retrieval; other reserved RAG settings remain inactive.
+- Ingestion uses validated `boardgame.rules.*` / `RULE_*` settings: 1200-character chunks, 200-character overlap budget, 1 MiB input limit and 10000 chunks by default. Servlet file/request limits remain 10 MiB. Retrieval top-K, similarity threshold, candidate limit and duplicate overlap are active; legacy `RAG_CHUNK_*` proposals remain inactive.
 - Metadata requires a source reference and document version; language must match the selected version. Inactive versions may be prepared. Duplicate imports create independent documents. URLs are metadata only; uploaded basenames are sanitized and no server filesystem paths are read.
 - PDF extraction, document edit/delete, deduplication, background ingestion and full Markdown parsing are deferred. No copyrighted commercial rule source is bundled. Original demo text is CC0 and should be imported into a separate demo game/version.
 - Embeddings use a separate vector table keyed by chunk/provider/model/dimensions; a composite FK preserves version ownership. Changing the active profile requires explicit reindexing and cannot mix incompatible vector spaces.
-- Exact cosine retrieval is intentional at this milestone's scale. A B-tree index supports version/profile filtering; a materialized candidate query isolates dimensions before distance evaluation. No approximate vector index, threshold filtering or reranking is introduced.
+- Exact cosine candidate selection is intentional at this scale. A B-tree index supports version/profile filtering; a materialized candidate query isolates dimensions before distance evaluation. Metadata filters precede the bounded candidate limit, then thresholding, duplicate suppression and a replaceable reranker precede final top-K. No ANN index is introduced.
 - Provider calls happen outside database transactions. A short locked transaction persists the complete generated batch atomically and handles concurrent duplicate indexing idempotently. Concurrent callers can still incur duplicate provider costs before persistence.
 - Indexing is explicit and synchronous, bounded by document chunk count and per-input characters. Existing imports are preserved and remain unindexed until requested. Ingestion does not call a provider.
 - Embedding configuration defaults to disabled; blank legacy provider/model/dimensions values retain safe defaults. An enabled provider requires a key. OpenAI HTTP requests have a fixed endpoint, no redirect following and bounded timeouts; errors never include upstream bodies or credentials.
@@ -324,8 +330,11 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Stateless questions resolve the game's active default once per request. All supplied evidence and citations belong to that version. Sessions/conversation history remain Milestone 6; no new migration or dependency is required for Milestone 4.
 - The prompt builder keeps trusted instructions separate from JSON-encoded untrusted questions/documents. It requests evidence-only answers, exact supporting quotes and explicit insufficiency; bounded whole chunks preserve retrieval order.
 - LLM-generated citation IDs and quotes are checked against the exact prompt evidence. Public source metadata always comes from storage. Unknown/excluded sources, invented quotes, duplicate citations, weak cited evidence or model refusal produce the fixed LOW fallback with no sources.
-- `boardgame.answer.*` gates default to 0.5 minimum and 0.8 HIGH. Generation requires usable evidence; accepted confidence uses the weakest cited score plus model-reported sufficiency. These are baseline answer acceptance heuristics, not Milestone 5 retrieval filtering or validated probabilities.
-- The opt-in LLM adapter uses Responses strict structured outputs, temperature 0, bounded tokens, `store=false`, fixed HTTPS, no tools/redirects/retries and safe errors. Both providers default to disabled. External calls run outside DB transactions; timing logs omit text/keys. Legacy `AI_*` and proposed retrieval threshold settings remain reserved.
+- `boardgame.answer.*` gates default to 0.5 minimum and 0.8 HIGH. Generation requires usable evidence; accepted confidence uses the weakest cited score plus model-reported sufficiency. HIGH additionally requires all strong supplied candidates to be cited and each quote to reach a configurable minimum length (12 by default). These remain heuristics, not validated probabilities.
+- The opt-in LLM adapter uses Responses strict structured outputs, temperature 0, bounded tokens, `store=false`, fixed HTTPS, no tools/redirects/retries and safe errors. Both providers default to disabled. External calls run outside DB transactions; timing logs omit text/keys. Legacy `AI_*` settings remain reserved.
+- Expansion selection uses owned EXPANSION document IDs, excluded by default. Filters intersect within a selected version and never change the default edition or introduce expansion/session domain models. Language defaults to the version's normalized language; mismatches return empty results without translation.
+- Rerankers may only permute the original candidates; invalid/altered/foreign candidates and errors fail safely. The default preserves cosine ordering and makes no paid call. Candidate limits bound cost/work and can truncate deduplicated recall; diagnostics explicitly flag saturation.
+- Duplicate suppression preserves source metadata and never deletes imports. Exact normalized content collapses only within matching version/language/type/document-version boundaries; near-contained overlap additionally requires the same document and the retained passage to contain the shorter candidate's source range. A longer passage is never dropped in favor of a shorter one. Distinct variants and source types remain separate.
 
 ### Multi-Game Architecture
 
@@ -384,6 +393,19 @@ The Phase 5 UI is a lightweight demonstration/testing interface.
 It must remain thin and reuse backend application logic.
 
 ## Validation
+
+### Milestone 5
+
+Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- The unchanged unit suite passed first. The first expanded run found a constructor-binding issue in the new properties records; explicit canonical constructor binding corrected it. A subsequent full `check bootJar` passed 217 tests (159 unit, 58 integration). Final review tightened duplicate containment to retain longer passages and added candidate-saturation regression coverage; the final full results below supersede intermediate checks.
+- Final `gradlew.bat check bootJar --no-daemon --console=plain` — PASS. All 218 tests passed: 160 unit and 58 PostgreSQL/pgvector integration tests, zero failures/errors/skips. Executable JAR rebuilt successfully; existing Milestone 0–4 checks continue to pass.
+- Evaluation uses `src/test/resources/evaluation/catan-rule-questions.json`: original narrow fact paraphrases, six supported questions and two unsupported questions with hand-assigned vectors. It imports duplicate sources and foreign game/edition decoys, checks expected topics/sections and never calls the LLM. Final recorded results: Recall@3 = 1.0, MRR@3 = 1.0, unsupported abstentions = 2/2. The generated per-question report is `build/reports/retrieval-evaluation.json`.
+- Unit coverage includes pipeline order, top-K after duplicate suppression/reranking, safe rejection of missing/duplicate/foreign/altered reranker candidates and failures, nonfinite/out-of-range thresholds, normalized bounded immutable filters, conservative contained overlap and conflicting variants, candidate saturation, startup validation/legacy blank settings, uncited strong evidence and trivial-quote confidence caps.
+- PostgreSQL/HTTP coverage includes source-type/document filtering before candidate selection, default language and cross-language ruleset isolation, explicit expansion opt-in, foreign/non-expansion selections failing before provider calls, duplicate-heavy top-K recovery, diagnostics, question filter propagation, weak-evidence fallback without LLM calls and meaningful invalid-filter/threshold/ownership responses.
+- These are deterministic pipeline results, not measurements of real embedding relevance, confidence calibration, answer factuality or hallucination rate. Live OpenAI testing for Milestones 3 and 4 remains deferred, as requested.
+- Tests use local provider doubles and isolated Testcontainers databases. No real API keys, paid calls, existing Compose data, `.env` edits or local service changes are required. No Milestone 6 work, commit, push, staging or branch change is performed.
+- `git diff --check` and source/fixture whitespace checks — PASS. AGENTS.md, PROJECT_SPEC.md, dependencies and migrations are unchanged; Flyway remains at V5. Changes remain unstaged and uncommitted on `milestone-5-production-quality-rag`. README and architecture documentation describe defaults, API examples, evaluation reproduction and limitations.
 
 ### Milestone 4
 
@@ -463,11 +485,12 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining automated Milestone 4 acceptance blockers are known. Docker/WSL is working. Milestone 5 remains unstarted; live provider validation remains deferred.
+- No remaining automated Milestone 5 acceptance blockers are known. Docker/WSL is working. Milestone 6 remains unstarted; live provider validation remains deferred.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
-- Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; there is no deduplication yet.
+- Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; retrieval suppresses duplicates without deleting stored documents/chunks.
 - Live provider interoperability and semantic quality were not tested with a real API key. Tests establish the HTTP contract and deterministic database retrieval; they do not measure real-model relevance. Provider token limits can still reject text because local bounds count characters, not tokens.
-- Live OpenAI testing for Milestone 3 is explicitly deferred, as requested; Milestone 4 live testing is likewise deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates are uncalibrated baseline heuristics; real-model relevance/grounding evaluation remains future work.
+- Live OpenAI testing for Milestone 3 is explicitly deferred, as requested; Milestone 4 live testing is likewise deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates are uncalibrated heuristics; deterministic Milestone 5 regression metrics do not replace real-model relevance/grounding evaluation.
+- Candidate pools are bounded and can underfill top-K after duplicate suppression; diagnostics flag saturation. The default reranker preserves cosine ordering and does not claim a learned relevance improvement. Expansion selection is document-level only; language filtering does not translate or bypass version isolation. These remain local-development RAG improvements rather than a production-readiness claim.
 - Indexing is synchronous and calls the provider per pending chunk. A failed batch stores no new vectors but already completed provider requests may still incur costs. Exact search and synchronous indexing will need revisiting for larger datasets; no ANN index or background worker is included.
 - JDK 21 is now installed and machine-level `JAVA_HOME` and PATH are configured correctly. This existing Codex session retained the old environment; validation loaded the installed `JAVA_HOME` into the process explicitly. Open a fresh PowerShell window or restart Codex to inherit the updated environment. The earlier portable tooling/cache remains outside the repository at `D:\Projects\.bootstrap-tools`.
 

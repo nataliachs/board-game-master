@@ -50,7 +50,7 @@ public class RetrievalExceptionHandler {
 
     @ExceptionHandler(RetrievalException.class)
     ResponseEntity<ApiError> retrieval(RetrievalException e, HttpServletRequest request) {
-        int status = switch (e.code()) { case INDEX_CONFLICT -> 409; case INDEX_LIMIT_EXCEEDED -> 413; default -> 400; };
+        int status = switch (e.code()) { case INDEX_CONFLICT -> 409; case INDEX_LIMIT_EXCEEDED -> 413; case RERANKING_FAILED -> 502; default -> 400; };
         return error(status, e.code().name(), e.getMessage(), request);
     }
 
