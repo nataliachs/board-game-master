@@ -1,2 +1,2 @@
-/** Provider-neutral embedding boundary and provider adapters. Answer and speech providers remain planned. */
+/** Provider-neutral embedding and LLM boundaries and provider adapters. Speech providers remain planned. */
 package com.boardgamemaster.ai;

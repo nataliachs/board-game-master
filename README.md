@@ -6,14 +6,15 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–3 are complete and validated.**
+**Milestones 0–4 are complete and validated with provider doubles; live OpenAI testing is deferred.**
 The application supports generic Game and GameVersion metadata, registration/read APIs,
 default-version selection, and player-count validation. Catan has one seeded reference
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
 for a specific version and read as ordered, traceable chunks. Explicit embedding indexing and
 version-scoped vector retrieval are implemented with opt-in provider configuration.
-Milestone 4 remains unstarted; generated rules answers, sessions, TeachingFlow, setup, voice
-and browser UI remain planned.
+Rule questions resolve the game's active default version and return cited answers or a fixed
+insufficient-evidence fallback. Milestone 5 remains unstarted; sessions, TeachingFlow, setup,
+voice and browser UI remain planned. Live OpenAI testing for Milestone 3 is still deferred.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
@@ -23,7 +24,7 @@ and browser UI remain planned.
 ## Planned product experience
 
 The sections below describe the intended product, not functionality already available in the
-Milestone 3 application. Current executable setup, API and test instructions are retained below.
+Milestone 4 application. Current executable setup, API and test instructions are retained below.
 
 ## Customer Experience
 
@@ -103,7 +104,7 @@ Core concepts include:
 AI integrations are kept behind provider abstractions.
 
 The project uses PostgreSQL with pgvector installed. Rule-document storage and semantic
-retrieval are implemented; answer generation and the session/teaching/setup concepts above remain planned.
+retrieval and cited answer generation are implemented; the session/teaching/setup concepts above remain planned.
 
 ## RAG
 
@@ -237,12 +238,20 @@ Active configuration:
 | `EMBEDDING_MAX_INPUT_CHARACTERS` | `4000`; maximum chunk/query UTF-16 length, 1–16000 |
 | `EMBEDDING_MAX_DOCUMENT_CHUNKS` | `1000`; synchronous indexing limit, 1–10000 |
 | `RAG_TOP_K` | `5`; default retrieved match count, 1–50 |
+| `LLM_PROVIDER` | `disabled`; set `openai` to enable answer generation |
+| `LLM_MODEL` | `gpt-4.1-mini`; must support Responses structured outputs and temperature |
+| `LLM_API_KEY` | Required when the LLM is enabled; private and independent of the embedding key setting |
+| `LLM_TIMEOUT` | `30s`; connect/request timeout, greater than zero and at most 120s |
+| `LLM_MAX_OUTPUT_TOKENS` | `800`; output budget, 128–4096; incomplete output fails safely |
+| `ANSWER_MINIMUM_EVIDENCE_SIMILARITY` | `0.5`; baseline acceptance gate for cited evidence, 0 to below the HIGH gate |
+| `ANSWER_HIGH_EVIDENCE_SIMILARITY` | `0.8`; HIGH confidence gate, above the minimum and at most 1 |
+| `ANSWER_MAX_CONTEXT_CHARACTERS` | `24000`; serialized question/evidence budget, 1000–160000 UTF-16 characters |
 
-LLM/speech, `RAG_SIMILARITY_THRESHOLD` and `RAG_CHUNK_*` settings remain reserved.
+Speech, `AI_*`, `RAG_SIMILARITY_THRESHOLD` and `RAG_CHUNK_*` settings remain reserved.
 Embedding settings and `RAG_TOP_K` are active. No provider keys are needed for ingestion,
 startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
-proposals remain inactive. Invalid ingestion/embedding/retrieval limits fail startup. Add optional
+proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer limits fail startup. Add optional
 overrides to your existing `.env`; do not overwrite it with the example file.
 The `prod` profile does not read `.env` and disables API documentation by default.
 Flyway creates the vector extension; the database migration role needs suitable privileges.
@@ -489,6 +498,79 @@ Storage uses pgvector with a version/profile B-tree filter index and exact searc
 recall loss at current scale. See [pgvector's exact search documentation](https://github.com/pgvector/pgvector/tree/v0.8.2#querying).
 Tests use fixed known vectors and local fake HTTP responses, independent of LLMs and API keys.
 
+## Implemented rule question API
+
+`POST /api/v1/games/{gameId}/questions` accepts:
+
+```json
+{
+  "question": "What happens when my token reaches the last space?"
+}
+```
+
+The backend resolves the game's active default GameVersion, then reuses version/profile-scoped
+retrieval. Clients do not select an edition. Each request resolves the current default; sessions
+and conversation history are not implemented. Questions must be nonblank and at most 4000
+characters, also within the configured embedding input limit.
+
+For live testing, first import and index a permitted document as described above. Add or update
+these entries in your existing private `.env`, preserving database and embedding settings:
+
+```dotenv
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4.1-mini
+LLM_API_KEY=your-private-api-key
+```
+
+Both embedding and LLM providers are opt-in. Blank legacy LLM settings remain disabled/default.
+Restart after configuration changes. No extra database migration is needed for Milestone 4;
+Flyway remains at V5. Requests with indexed rules may incur a query-embedding charge and an
+LLM charge. Default tests require neither keys nor paid calls. A private key may be used in both
+key settings if it has appropriate permissions, but each setting must be configured explicitly.
+
+Using the demo game's ID from the import walkthrough:
+
+```powershell
+$question = @{ question = 'What happens when my token reaches the last space?' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/v1/games/$($game.id)/questions" `
+    -ContentType 'application/json' -Body $question | ConvertTo-Json -Depth 8
+```
+
+You can also execute this endpoint in Swagger. The response contains `gameId`, `gameVersionId`,
+`answer`, `confidence` (`HIGH`, `MEDIUM`, `LOW`) and `sources`. Each accepted source contains
+stored chunk/document/version IDs, document/type/version/language/reference, section/page,
+chunk offsets, an exact supporting quote and cosine similarity. Source metadata is resolved
+from storage, never trusted from model-generated names or pages.
+
+The dedicated prompt builder keeps trusted instructions separate from JSON-encoded untrusted
+questions/document data, prohibits invented rules and asks the model to decline unsupported or
+conflicting evidence. Context preserves complete chunks in retrieval order within its serialized
+character budget. Generation uses the [OpenAI Responses structured-output contract](https://developers.openai.com/api/docs/guides/structured-outputs),
+temperature 0, a bounded output budget and `store=false`; no tools or conversation persistence.
+The default [GPT-4.1 mini model](https://developers.openai.com/api/docs/models/gpt-4.1-mini) supports this contract.
+
+Confidence is a baseline evidence heuristic, not a calibrated probability. With no supplied chunk
+meeting the minimum gate, generation is skipped. The model must also report sufficient evidence;
+every returned citation must identify a supplied chunk, quote its exact content and meet the
+minimum gate. Unknown/excluded citations, invented quotes or duplicate citations fail closed.
+Accepted answers are HIGH only if every cited chunk meets the HIGH gate; otherwise MEDIUM.
+Empty/weak evidence, refusal or failed citation checks return HTTP 200, LOW, no sources and:
+
+> I couldn't verify that confidently from the available rules.
+
+The search endpoint itself retains all top-K matches; these answer gates do not introduce
+Milestone 5 retrieval filtering, reranking, deduplication or evaluation infrastructure. Real-model
+relevance, threshold calibration and resistance to adversarial prompts remain unverified. Exact
+quotes validate provenance but cannot prove that all generated prose is semantically supported.
+Live OpenAI testing for Milestone 3 remains deferred, and live Milestone 4 testing is also deferred.
+
+Unknown games return 404; inactive games/default versions or missing defaults return 409;
+invalid questions return 400. Existing embedding errors retain their codes/statuses. Disabled,
+unavailable or rate-limited LLMs return 503, timeouts 504, and malformed/incomplete output 502.
+Provider outages remain errors rather than being disguised as low-confidence answers. With
+embeddings configured and an empty index, no query-embedding or LLM call is made; if embeddings
+are disabled, the existing `EMBEDDING_NOT_CONFIGURED` error still applies.
+
 ## Planned API examples
 
 These are design examples, not implemented endpoints:
@@ -511,14 +593,14 @@ Content-Type: application/json
 - [x] Milestone 1 — Game + GameVersion Domain
 - [x] Milestone 2 — Rule Documents + Ingestion
 - [x] Milestone 3 — Embeddings + Vector Search
-- [ ] Milestone 4 — RAG Question Answering
+- [x] Milestone 4 — RAG Question Answering
 - [ ] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 4 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 5 is unstarted.
 
 ## Adding a game
 

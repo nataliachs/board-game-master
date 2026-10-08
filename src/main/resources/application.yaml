@@ -42,6 +42,16 @@ springdoc:
   swagger-ui:
     enabled: false
 boardgame:
+  llm:
+    provider: ${LLM_PROVIDER:disabled}
+    model: ${LLM_MODEL:gpt-4.1-mini}
+    api-key: ${LLM_API_KEY:}
+    timeout: ${LLM_TIMEOUT:30s}
+    max-output-tokens: ${LLM_MAX_OUTPUT_TOKENS:800}
+  answer:
+    minimum-evidence-similarity: ${ANSWER_MINIMUM_EVIDENCE_SIMILARITY:0.5}
+    high-evidence-similarity: ${ANSWER_HIGH_EVIDENCE_SIMILARITY:0.8}
+    max-context-characters: ${ANSWER_MAX_CONTEXT_CHARACTERS:24000}
   embedding:
     provider: ${EMBEDDING_PROVIDER:disabled}
     model: ${EMBEDDING_MODEL:text-embedding-3-small}
