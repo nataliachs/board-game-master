@@ -1,0 +1,46 @@
+package com.boardgamemaster.rag.application;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import static org.assertj.core.api.Assertions.*;
+
+class SourceQuoteMatcherTest {
+    @Test void paragraphAndUnicodeWhitespaceDifferencesReturnOriginalSpan() {
+        String original = "Deal four mission cards.\r\n\r\nKeep\t at\u00a0least two.";
+        assertThat(SourceQuoteMatcher.find("## Setup\n\n" + original + "\nNext step.",
+                " Deal four mission cards. Keep at least two. ")).contains(original);
+        assertThat(SourceQuoteMatcher.find(original, original)).contains(original);
+        assertThat(SourceQuoteMatcher.find("Keep two.", "Keep\n\ntwo.")).contains("Keep two.");
+    }
+    @ParameterizedTest @ValueSource(strings = {
+        "Deal four mission cards. ... Keep at least two.",
+        "Deal four mission cards. … Keep at least two.",
+        "Deal five mission cards. Keep at least two.",
+        "Deal four mission cards! Keep at least two.",
+        "deal four mission cards. Keep at least two.",
+        "Deal four cards. Keep at least two.",
+        "Dealfour mission cards. Keep at least two.",
+        "Keep at least two. Deal four mission cards."
+    })
+    void changedNonWhitespaceContentCannotPass(String quote) {
+        assertThat(SourceQuoteMatcher.find("Deal four mission cards.\n\nKeep at least two.", quote)).isEmpty();
+    }
+    @Test void missingWhitespaceAndHiddenCharactersAreNotNormalizedAway() {
+        assertThat(SourceQuoteMatcher.find("Keep two.", "Keeptwo.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Keeptwo.", "Keep two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Keep two.", "Keep\u200btwo.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Keep two.", "\u00a0\u00a0")).isEmpty();
+    }
+    @Test void quotesCannotSkipInterveningRulesAndRegexSyntaxIsLiteral() {
+        assertThat(SourceQuoteMatcher.find("Deal four. Return extras. Keep two.", "Deal four. Keep two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Pay (2)\n[cards]+.", "Pay (2) [cards]+.")).contains("Pay (2)\n[cards]+.");
+        assertThat(SourceQuoteMatcher.find("Pay two cards.", "Pay .* cards.")).isEmpty();
+    }
+    @Test void restoredQuotesRemainBounded() {
+        assertThat(SourceQuoteMatcher.find("Keep" + " ".repeat(1000) + "two.", "Keep two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("x".repeat(1001), "x".repeat(1001))).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Keep" + " ".repeat(1000) + "two. Later: Keep\ntwo.", "Keep two."))
+                .contains("Keep\ntwo.");
+    }
+}

@@ -6,7 +6,7 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–7 are implemented and validated with provider doubles.**
+**Milestones 0–8 are implemented and validated with provider doubles.**
 A limited user-run live OpenAI Lantern Trail walkthrough passed on 2026-10-08; broader live
 quality evaluation remains deferred. See [the recorded evidence and limitations](docs/DEVELOPMENT_STATUS.md#user-run-live-openai-walkthrough--2026-10-08).
 The application supports generic Game and GameVersion metadata, registration/read APIs,
@@ -18,7 +18,9 @@ Stateless rule questions resolve the game's active default version; session ques
 pinned version. Both return cited answers or a fixed insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
 suppression, a reranking boundary and diagnostics. Milestone 6 adds persistent sessions, version-bound
 TeachingFlow, progressive lessons and bounded conversation context. Milestone 7 adds persisted
-guided setup with teaching interruption/resume. Voice and browser UI remain planned for Milestone 8.
+guided setup with teaching interruption/resume. Milestone 8 adds optional speech adapters,
+push-to-talk and a thin browser demo at [localhost:8080](http://localhost:8080/).
+Live speech recognition/synthesis quality remains unverified; no paid calls were made for this implementation.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
@@ -28,8 +30,8 @@ guided setup with teaching interruption/resume. Voice and browser UI remain plan
 ## Product experience
 
 The teaching → guided setup → resumed teaching → playing journey is implemented through the
-backend APIs and Swagger. The sections below describe those capabilities and mark future work
-explicitly. Voice and the customer-facing browser UI belong to Milestone 8 and remain unstarted.
+browser demo as well as the backend APIs and Swagger. The browser uses the same backend
+services, with optional voice and independently usable text input.
 
 ## Customer Experience
 
@@ -113,7 +115,7 @@ Core concepts include:
 AI integrations are kept behind provider abstractions.
 
 The project uses PostgreSQL with pgvector installed. Rule-document storage and semantic
-retrieval, cited answer generation, sessions, teaching and guided setup are implemented; voice and browser UI remain planned.
+retrieval, cited answer generation, sessions, teaching, guided setup, optional voice and the browser demo are implemented.
 
 ## RAG
 
@@ -171,13 +173,13 @@ Customers normally select Game only. The backend resolves and pins an active def
 GameVersion. Application-managed TEACHING / SETUP / PLAYING / COMPLETED stages and persisted
 lesson/setup positions control progress; the LLM does not decide the next step. TeachingFlow
 chooses what comes next; RAG supplies verified rule evidence. Clarifications preserve both
-lesson and setup progress. The planned browser UI will provide Review Rules without resetting the session.
+lesson and setup progress. The browser provides Review Rules without resetting the session.
 
-## Architecture and planned interfaces
+## Architecture and interfaces
 
 ```mermaid
 flowchart TD
-  Client[API client or Swagger; Thymeleaf UI planned] --> API[Spring Boot API]
+  Client[API client, Swagger or Thymeleaf UI] --> API[Spring Boot services]
   API --> Games[Game and GameVersion]
   API --> Sessions[Sessions and bounded conversation]
   API --> Teaching[Generic TeachingFlow engine]
@@ -185,7 +187,7 @@ flowchart TD
   Setup --> Teaching
   Teaching --> Sessions
   API --> Setup
-  API --> Voice[STT and TTS adapters - planned]
+  API --> Voice[Optional STT and TTS adapters]
   Voice --> Sessions
   Sessions --> RAG[Generic RAG pipeline]
   RAG --> Retrieval[Version-scoped retrieval]
@@ -200,12 +202,11 @@ Question answering: resolve ruleset → query embedding → filtered retrieval/r
 ## Stack
 
 Implemented: Java 21, Spring Boot Web/Data JPA/Validation, PostgreSQL + pgvector, Flyway,
-Docker Compose, the Gradle wrapper, OpenAPI/Swagger, JUnit 5, Mockito and Testcontainers.
-Embedding and LLM integrations use provider-neutral interfaces.
+Docker Compose, the Gradle wrapper, OpenAPI/Swagger, Thymeleaf, JUnit 5, Mockito and Testcontainers.
+Embedding, LLM, STT and TTS integrations use provider-neutral interfaces.
 
-Planned for Milestone 8: STT/TTS interfaces and adapters, plus a thin Thymeleaf UI with HTML/CSS
-and minimal JavaScript. Future UI controllers will reuse backend services; templates and
-JavaScript will not own workflow, RAG or game logic.
+The thin Thymeleaf UI uses HTML/CSS and minimal JavaScript for recording and presentation.
+UI controllers reuse backend services; templates and JavaScript do not own workflow, RAG or game logic.
 
 ## Local setup
 
@@ -272,11 +273,12 @@ Active configuration:
 | `SESSION_RECENT_MESSAGE_LIMIT` | `8`; maximum recent messages considered for contextual Q&A, 2–50 |
 | `SESSION_CONTEXT_CHARACTERS` | `8000`; whole recent-message content budget, 1000–16000 |
 
-Speech, `AI_*` and `RAG_CHUNK_*` settings remain reserved.
+Speech settings are active and documented under **Browser questions and optional voice** below.
+`AI_*` and `RAG_CHUNK_*` settings remain reserved.
 Embedding, retrieval (`RAG_*` except `RAG_CHUNK_*`), LLM, answer and session settings in the table are active. No provider keys are needed for ingestion,
 startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
-proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer/session limits fail startup. Add optional
+proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer/session/speech limits fail startup. Add optional
 overrides to your existing `.env`; do not overwrite it with the example file.
 The `prod` profile does not read `.env` and disables API documentation by default.
 Flyway creates the vector extension; the database migration role needs suitable privileges.
@@ -661,8 +663,15 @@ The default [GPT-4.1 mini model](https://developers.openai.com/api/docs/models/g
 
 Confidence is a baseline evidence heuristic, not a calibrated probability. With no supplied chunk
 meeting the minimum gate, generation is skipped. The model must also report sufficient evidence;
-every returned citation must identify a supplied chunk, quote its exact content and meet the
+every returned citation must identify a supplied chunk, quote its content (allowing whitespace-run differences only) and meet the
 minimum gate. Unknown/excluded citations, invented quotes or duplicate citations fail closed.
+Accepted citations return the original contiguous source span, including original paragraph breaks.
+Only whitespace runs may differ: words, numbers, punctuation, case and order must match. Ellipses
+cannot bridge omitted text, and matching never searches another chunk on behalf of the cited ID.
+Both generated and restored quotes are bounded at 1000 UTF-16 characters. Whitespace-only differences
+do not trigger a correction call; other mismatches retain the bounded correction and LOW fallback.
+The minimum quote-length gate for HIGH confidence uses the restored source quote, so model-added
+spaces cannot inflate that check.
 Accepted answers are HIGH only if every cited chunk meets the HIGH gate, all strong prompt
 evidence is cited, and every quote meets `ANSWER_MINIMUM_QUOTE_CHARACTERS`; otherwise MEDIUM.
 This conservatively downgrades partial evidence coverage and trivial quotes.
@@ -757,13 +766,43 @@ the existing safe 503 errors; teaching continues to work.
 lesson, active setup step during SETUP and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8` (2–50) and
 `SESSION_CONTEXT_CHARACTERS=8000` (1000–16000). They are optional additions to a private `.env`;
 omitting them uses defaults. Only whole recent messages within both limits are retained.
-The retrieval query preserves the current question, then adds the active setup title (during SETUP),
-latest retained user question and lesson title within the available budget. It is capped at
+The retrieval query preserves the current question, then adds the active setup title and instruction
+(during SETUP), latest retained user question, lesson title and lesson explanation within the available budget.
+Titles are capped at 160 characters each, instructions/explanations at 800 each and the prior question at 400;
+truncation preserves Unicode boundaries. These topic cues help natural follow-ups such as "Can I just keep two?".
+The complete query is capped at
 4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
 Older answers, lesson text and the current setup instruction are untrusted context, never substitutes for source evidence.
 The existing serialized prompt budget also applies and can further remove older context to preserve evidence.
 The limited live walkthrough demonstrated one follow-up; broader live-model understanding remains
 unverified. Setup-specific Q&A has automated provider-double coverage only. Session expansion selection and summarization are not implemented.
+
+To diagnose a LOW answer, find console events with the same `requestId`: `Rule retrieval completed`,
+`Rule answer evidence`, `Rule answer fallback` and `Rule question completed`. Evidence events identify
+chunk/document IDs, section/page, cosine similarity and `includedInPrompt`. Fallback `reason` distinguishes
+`NO_RETRIEVED_EVIDENCE`, `PROMPT_BUDGET_EXCLUDED_EVIDENCE`, `NO_STRONG_EVIDENCE`,
+`MODEL_INSUFFICIENT_EVIDENCE`, `UNKNOWN_CITATION`, `DUPLICATE_CITATION`, `QUOTE_MISMATCH`,
+`WEAK_CITATION` and `NO_CITATIONS`. These diagnostics omit question/answer text, rule bodies and quotes.
+They explain rejection stages; they do not prove that the selected passages are relevant or the model is accurate.
+
+An otherwise valid response with a mismatched quotation gets at most one correction attempt using the
+same question, context and retrieved excerpts. Instructions require exact contiguous quotes paired with
+their own chunk IDs. The rejected answer/quote is not reused as evidence. The complete replacement
+response must pass every citation and evidence check; another mismatch returns LOW. Unknown, duplicate
+or weak citations and insufficient evidence do not trigger correction. This can add one LLM call and
+its latency/cost (each call uses the configured timeout); it does not repeat retrieval or indexing.
+Look for `Rule answer correction requested` / `Rule answer correction completed` and `attempt=2`.
+Provider errors remain errors, and only the final validated answer or LOW fallback is stored in history.
+
+For a controlled local quote comparison, temporarily add `ANSWER_QUOTE_DIAGNOSTICS_LEVEL=DEBUG`
+to your private `.env`, restart the application and reproduce the question once. The dedicated logger
+`com.boardgamemaster.rag.quotediagnostics` emits `Rule quote mismatch detail` with `attempt`,
+the rejected `quote`, its `citedContent`, and `exactQuoteFoundInOtherChunkIds` (other prompt chunks
+containing that exact quote). Text is JSON-escaped so whitespace differences remain visible; source
+content is capped at 8000 characters with `contentTruncated` and the original length recorded.
+This opt-in output contains imported rule text and model-generated quotes: keep it local and out of Git.
+Set `ANSWER_QUOTE_DIAGNOSTICS_LEVEL=OFF` and restart after capture. OFF is the default, independent
+of ordinary pipeline logging. This adds no provider calls and does not relax citation checks.
 
 Read history (oldest first within each bounded page):
 
@@ -817,7 +856,7 @@ logic has no Catan-specific sequence. Only publish content you have permission t
 
 Automated checks include session/domain/context tests and isolated PostgreSQL/HTTP integration
 tests with known-vector embedding and LLM doubles. The limited live walkthrough supplements
-these results; broader evaluation remains deferred. Voice and browser UI remain unimplemented.
+these results; broader evaluation remains deferred. See the browser and voice demonstrations below.
 
 ## Implemented guided setup API
 
@@ -916,10 +955,10 @@ their existing behavior and can enter PLAYING without a recorded setup confirmat
 - [x] Milestone 5 — Production-Quality RAG
 - [x] Milestone 6 — Game Sessions + Teaching Flow
 - [x] Milestone 7 — Guided Setup Integrated with Teaching
-- [ ] Milestone 8 — Voice + Minimal Demo UI
+- [x] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 8 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. These milestones are implemented; live evaluation limitations remain recorded.
 
 ## Adding a game
 
@@ -927,7 +966,7 @@ Register Game and GameVersion, import permitted rules, generate embeddings, conf
 
 ## Demo UI
 
-By the end of Phase 5, the application should provide a lightweight browser interface allowing a user to:
+The lightweight browser interface allows a user to:
 
 - choose a game
 - choose player count
@@ -942,14 +981,140 @@ By the end of Phase 5, the application should provide a lightweight browser inte
 - hear spoken answers
 - review previously taught rules
 
-The Phase 5 interface is intended for testing and portfolio demonstration rather than being the final production café UI.
-Planned implementation is a lightweight Spring Boot/Thymeleaf UI with HTML/CSS/minimal
-JavaScript, not a separate frontend project. It will load games from the backend, default
-to STANDARD depth, preserve lesson/setup progress during Q&A, and continue the same session
-into PLAYING. It will show conversation history, citations, transcription and audio, support
-review and end-session actions, and display understandable errors. Text remains independently
-usable. The complete Phase 5 demo must work without Swagger or Postman; the current application
-still uses the documented APIs/Swagger and does not yet include this UI.
+The Phase 5 interface is for local testing and portfolio demonstration. It uses Spring Boot/Thymeleaf,
+HTML/CSS and a small recording script, without a separate frontend build. Pages load games from
+the backend and default to STANDARD. Questions and review preserve persisted progress; the
+same session continues into PLAYING. History shows the latest 20 messages with older-page links.
+Completed sessions retain history and review while preventing further actions. API keys remain
+on the server. These local demo pages and APIs have no authentication; production access control
+and retention policies remain future work.
+
+### Provider-free browser walkthrough
+
+1. From the repository root, start the database with `docker compose up -d --wait`, then run
+   `.\gradlew.bat bootRun`. Keep your existing private `.env`; do not overwrite it with the example.
+2. Open [the browser demo](http://localhost:8080/). Select Catan, four players and STANDARD,
+   then choose **Start game**. Catalog entries come from the database.
+3. Use **Continue**, **Previous**, **Repeat** or **Explain again**. At the setup lesson,
+   **Start guided setup** opens the saved setup flow. Follow each instruction with your physical
+   components, using **Done / Next**; **Restart setup** clears only setup confirmations.
+4. At the final setup step, choose **Complete setup & return to teaching**. The saved lesson
+   resumes. Continue through the remaining lessons and choose **Finish teaching & start playing**.
+   The same session enters PLAYING.
+5. Open **Review rules**, expand a reached lesson or setup step, and return to the session.
+   Bookmark its URL to reopen it later. **End game** completes the session while keeping readable history.
+
+No AI provider is needed for these authored lessons, setup or review. Catan's original introductory
+guidance still requires the physical beginner diagram; commercial rules are not bundled or indexed.
+Typed/voice rule answers require permitted indexed documents and configured embedding/LLM providers.
+If those are unavailable, the page shows an understandable error and keeps your place.
+
+### Browser questions and optional voice
+
+For cited answers, use the separate Lantern Trail game/version created in the **Implemented
+rule-document API** demo above. Import its original sample, explicitly index it and publish
+teaching/setup flows using the documented APIs. Those content-administration tasks remain API
+operations; the complete customer journey then runs in the browser without Swagger or Postman.
+Select that game on the start screen. Existing sessions keep their original version/flow pins,
+so create a new session after publishing a setup-trigger teaching flow.
+
+Ask **What happens when my token reaches the last space?** during teaching, setup or playing.
+The answer appears in **Your conversation**, with confidence and expandable **View sources**
+containing exact quotes and source metadata. Ask a follow-up, such as **Where does my token go
+after that?**, and confirm that the lesson/setup position stays unchanged. Unsupported questions
+may return the fixed LOW-confidence fallback. This is a manual demonstration, not a grounding benchmark.
+
+Speech is independently opt-in. These defaults now have active meanings in `.env.example`:
+
+| Setting | Default / purpose |
+| --- | --- |
+| `STT_PROVIDER` | `disabled`; set `openai` only when ready to send audio |
+| `STT_MODEL` | `whisper-1` |
+| `STT_API_KEY` | Blank; supply privately for enabled transcription |
+| `STT_TIMEOUT` | `30s`; positive, at most `120s` |
+| `TTS_PROVIDER` | `disabled`; set `openai` only when ready for synthesis |
+| `TTS_MODEL` | `tts-1` |
+| `TTS_API_KEY` | Blank; supply privately for enabled synthesis |
+| `TTS_TIMEOUT` | `30s`; positive, at most `120s` |
+| `TTS_VOICE` | `alloy`; also `echo`, `fable`, `onyx`, `nova`, `shimmer` |
+| `VOICE_MAX_AUDIO_BYTES` | `2097152` (2 MiB); configurable from 1 KiB to 8 MiB |
+
+Speech keys are separate settings and do not automatically inherit `LLM_API_KEY`. STT and TTS
+can be enabled independently. For paid end-to-end voice Q&A, embedding and LLM configuration
+must also be ready. Keep all real keys in your ignored `.env` or process environment, then restart
+the application. Nothing in this milestone automatically indexes documents or enables paid calls.
+The adapters follow OpenAI's [transcription contract](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)
+and [speech contract](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create).
+
+With STT enabled, **Hold to speak** requests microphone access only while you initiate a recording.
+Hold the pointer button or Space/Enter, ask one short question, then release to send. Recording
+stops at 60 seconds or the byte limit; leaving/focusing away from the page cancels recording.
+Use localhost or HTTPS and allow microphone permission. If the browser cannot record, upload a
+short WAV, WebM, Ogg, MP3 or MP4 recording, or use text. The server checks declared MIME type,
+container signature and size; it does not fully decode uploaded codecs or enforce audio duration.
+The servlet's separate 10 MB multipart request limit also applies.
+
+The page displays transcription, saved answer and citations. Generated MP3 audio has playback
+controls; if autoplay is blocked, press Play. Spoken answers are AI-generated, as disclosed in
+the UI and [OpenAI's speech guidance](https://developers.openai.com/api/docs/guides/text-to-speech).
+STT failure leaves progress/history unchanged. If answering fails after transcription, recognized
+text remains visible for correction or typed retry. If TTS fails or is disabled, the saved text and
+citations remain usable. No automatic provider retries occur. Refresh before retrying a network
+failure because a question may already have been saved. Concurrent navigation can discard a
+stale voice answer; provider requests already completed may still incur costs.
+
+### Spoken teaching and setup guidance
+
+TTS also reads authored lessons and setup instructions; STT, embeddings and LLM providers are
+not needed for this narration. Enable `TTS_PROVIDER=openai` and privately configure `TTS_API_KEY`,
+then restart the application. On the start screen, select **Speak explanations** before **Start game**
+to hear the first lesson. In an existing teaching/setup session, enable **Speak explanations** there.
+The choice is remembered within the browser tab. New lessons and setup steps are narrated as
+you navigate; **Repeat** and **Explain again** also request the displayed explanation.
+
+Use the audio controls to pause/resume, **Stop speaking** to stop, and **Listen / Replay** to hear
+the current guidance again. Replay reuses audio already loaded on the current page. If autoplay
+is blocked, press Play. Refreshing, asking a question or returning from review does not automatically
+narrate the same content again when browser session storage is available; explicit Listen remains
+available. Speaking a question stops narration so the microphone does not pick up the explanation.
+
+Narration uses the configured AI voice and incurs TTS usage. It reads the authored heading and
+lesson explanation, or the current setup instruction with its notes/warnings. **Explain again**
+uses the same expanded explanation shown as text. It does not invent rules, retrieve sources,
+advance progress or add conversation messages. Long guidance is split into segments of at most
+4096 characters; the next segment is generated after playback finishes the current one. Pausing
+or stopping prevents generation of later segments, but an already submitted request may still
+incur usage. Text and navigation remain available if narration fails. Browser decoding/playback
+was checked with synthetic silent MP3; live narration quality and intelligible speech remain unverified.
+
+`POST /api/v1/sessions/{sessionId}/voice/narration` accepts JSON with `expectedRevision`,
+optional `explainAgain` (default false) and optional `segmentIndex` (default 0). The server selects
+the pinned current lesson/setup content; clients cannot submit arbitrary narration text.
+It returns the session/revision/stage/section, segment index/count, segment text and MP3 metadata.
+Narration is available only in active TEACHING/SETUP sessions. Stale revisions or progress changes
+during synthesis return 409; invalid segments return 400. Provider failures use the normal safe
+speech errors. Synthesis occurs outside database transactions, and audio is not persisted.
+
+### Implemented voice API
+
+`POST /api/v1/sessions/{sessionId}/voice` accepts `multipart/form-data` with a required binary
+part named `audio`. Success returns `transcription`, `message` (the existing session answer,
+revision and citations), `audio` (`mediaType: audio/mpeg`, `base64`) and nullable `answerError` /
+`audioError`. Audio exists only for the response and browser playback; the database stores the
+usual text conversation and source metadata, without raw audio or generated audio files.
+
+Invalid/empty audio returns 400, oversized audio 413, invalid provider responses 502,
+unavailable/disabled/rate-limited providers 503 and timeouts 504 using safe error messages.
+Missing/completed sessions return 404/409 before speech calls. After successful transcription,
+an answer failure returns its HTTP status with transcription and `answerError`; no partial
+conversation is stored. TTS failure returns 200 with the saved `message`, `audio: null` and
+`audioError`. Synthesis accepts up to 4096 characters; a longer answer keeps its full text and
+returns a structured audio error. Speech HTTP bodies are bounded (64 KiB STT, 4 MiB TTS).
+
+Automated validation uses local HTTP fixtures, provider doubles and disposable databases.
+Synthetic-microphone browser checks verify recording, transcription, audio controls, desktop/mobile
+layout and the full journey; they do not establish real transcription accuracy or intelligible
+speech playback. Live speech testing and broader live RAG evaluation remain deferred.
 
 ## Deferred work
 

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script><script src="/js/voice.js" defer></script></head>
+<body th:with="currentSession=${page.lesson.session},stage=${page.lesson.session.stage.name()}"><header th:replace="~{fragments :: header}"></header><main class="session-layout">
+  <aside class="sidebar"><p class="eyebrow" th:text="${stage}"></p><h1 th:text="${page.game.name}"></h1><p class="muted" th:text="${page.version.edition + ' · ' + page.version.language}"></p><p th:text="${currentSession.playerCount + ' players · ' + currentSession.teachingDepth}"></p>
+    <h2 class="small">Your learning path</h2><ol class="lesson-list"><li th:each="lesson : ${page.lessons}" th:classappend="${lesson.key == currentSession.currentSectionKey ? 'current' : ''}"><span th:text="${currentSession.completedSections.contains(lesson.key) ? '✓ ' : ''}"></span><span th:text="${lesson.title}"></span><span th:if="${lesson.key == currentSession.currentSectionKey}" class="sr-only"> (current lesson)</span></li></ol>
+    <a th:href="@{/sessions/{id}/review(id=${currentSession.id})}">Review rules</a><a href="/">Choose another game</a>
+  </aside>
+  <div class="main-column"><div th:replace="~{fragments :: alerts}"></div>
+    <section class="card" id="narration" th:if="${page.voice.outputEnabled &amp;&amp; (stage == 'TEACHING' || stage == 'SETUP')}"
+      th:attr="data-url=@{/api/v1/sessions/{id}/voice/narration(id=${currentSession.id})},data-session=${currentSession.id},data-stage=${stage},data-section=${stage == 'SETUP' ? page.setup.step.key : currentSession.currentSectionKey},data-explain-again=${stage == 'TEACHING' &amp;&amp; explanation != null}">
+      <label class="checkbox-label"><input id="spoken-guidance" type="checkbox">Speak explanations</label>
+      <p class="muted small">An AI-generated voice guides each new lesson and setup step. Listening uses the configured speech provider.</p>
+      <div class="actions"><button id="listen-guidance" type="button">Listen / Replay</button><button id="stop-guidance" type="button">Stop speaking</button></div>
+      <p id="guidance-status" role="status" aria-live="polite">Choose Listen, or enable spoken guidance for each new lesson and setup step.</p>
+      <audio id="guidance-audio" controls hidden></audio>
+    </section>
+    <section class="card lesson-card" id="current-lesson" th:if="${stage == 'TEACHING'}">
+      <p class="eyebrow" th:text="${'Lesson ' + page.lesson.lessonNumber + ' of ' + page.lesson.totalLessons}"></p><h2 th:text="${page.lesson.lesson.title}"></h2>
+      <p class="lead preserve" th:text="${explanation != null ? explanation : page.lesson.explanation}"></p>
+      <p class="muted" th:text="${page.lesson.notice}"></p>
+      <form th:action="@{/ui/sessions/{id}/teaching(id=${currentSession.id})}" method="post" class="actions">
+        <input type="hidden" name="expectedRevision" th:value="${currentSession.revision}">
+        <button type="submit" name="action" value="PREVIOUS">Previous</button><button type="submit" name="action" value="REPEAT">Repeat</button><button type="submit" name="action" value="EXPLAIN_AGAIN">Explain again</button>
+        <button class="primary" type="submit" name="action" value="CONTINUE" th:text="${page.lesson.lesson.setupTrigger &amp;&amp; (currentSession.setup == null || !currentSession.setup.completed) ? 'Start guided setup' : (page.lesson.lessonNumber == page.lesson.totalLessons ? 'Finish teaching &amp; start playing' : 'Continue')}"></button>
+      </form>
+      <form th:if="${page.setup != null &amp;&amp; currentSession.setup.currentStepKey == null &amp;&amp; !page.lesson.lesson.setupTrigger}" th:action="@{/ui/sessions/{id}/setup(id=${currentSession.id})}" method="post" class="secondary-action"><input type="hidden" name="expectedRevision" th:value="${currentSession.revision}"><button name="action" value="START">Start setup now</button></form>
+    </section>
+    <section class="card lesson-card" id="current-setup" th:if="${stage == 'SETUP' &amp;&amp; page.setup != null}">
+      <p class="eyebrow" th:text="${'Setup · Step ' + page.setup.stepNumber + ' of ' + page.setup.totalSteps}"></p><h2 th:text="${page.setup.step.title}"></h2><p class="lead preserve" th:text="${page.setup.step.instruction}"></p>
+      <ul th:if="${!#lists.isEmpty(page.setup.step.notes)}"><li th:each="note : ${page.setup.step.notes}" th:text="${note}"></li></ul><ul class="warnings" th:if="${!#lists.isEmpty(page.setup.step.warnings)}"><li th:each="warning : ${page.setup.step.warnings}" th:text="${warning}"></li></ul>
+      <p class="muted" th:text="${page.setup.notice}"></p><form th:action="@{/ui/sessions/{id}/setup(id=${currentSession.id})}" method="post" class="actions"><input type="hidden" name="expectedRevision" th:value="${currentSession.revision}"><button name="action" value="PREVIOUS">Previous</button><button name="action" value="REPEAT">Repeat</button><button name="action" value="RESTART">Restart setup</button><button class="primary" th:if="${page.setup.stepNumber &lt; page.setup.totalSteps}" name="action" value="NEXT">Done / Next</button><button class="primary" th:if="${page.setup.stepNumber == page.setup.totalSteps}" name="action" value="COMPLETE">Complete setup &amp; return to teaching</button></form>
+    </section>
+    <section class="card lesson-card" th:if="${stage == 'PLAYING'}"><p class="eyebrow">Game in progress</p><h2>You're ready to play.</h2><p class="lead">Keep this session open. Ask whenever a rule needs a closer look.</p><a th:href="@{/sessions/{id}/review(id=${currentSession.id})}">Review previously taught rules</a></section>
+    <section class="card lesson-card" th:if="${stage == 'COMPLETED'}"><p class="eyebrow">Session completed</p><h2>Thanks for playing.</h2><p>Your lessons, setup confirmations and conversation remain available.</p><a href="/">Start another game</a></section>
+    <section class="card" th:if="${stage != 'COMPLETED'}"><h2>Ask the Game Master</h2><p class="muted">Your question won't advance the lesson or setup step.</p>
+      <form th:action="@{/ui/sessions/{id}/messages(id=${currentSession.id})}" method="post"><label for="question">Your question</label><textarea id="question" name="question" maxlength="4000" rows="3" required placeholder="What happens if…?"></textarea><div class="actions"><button type="submit" class="primary">Ask</button><a th:if="${stage == 'TEACHING'}" href="#current-lesson">Continue lesson</a><a th:if="${stage == 'SETUP'}" href="#current-setup">Return to setup</a></div></form>
+      <section id="voice" class="voice-panel" th:attr="data-url=@{/api/v1/sessions/{id}/voice(id=${currentSession.id})},data-history-url=@{/sessions/{id}/conversation(id=${currentSession.id})},data-max-bytes=${page.voice.maxAudioBytes}">
+        <h3>Prefer to ask aloud?</h3><p class="muted" th:if="${!page.voice.inputEnabled}">Voice input isn't enabled here. You can keep using text.</p>
+        <div th:if="${page.voice.inputEnabled}"><button id="speak" type="button">Hold to speak</button><p id="recording-status" role="status" aria-live="polite">Hold the button, ask one question, then release. Limit: 60 seconds.</p>
+          <details><summary>Or upload a short recording</summary><label for="audio-file">WAV, WebM, Ogg, MP3 or MP4</label><input id="audio-file" type="file" accept="audio/wav,audio/webm,audio/ogg,audio/mpeg,audio/mp4"><button id="upload-audio" type="button">Send recording</button></details>
+        </div>
+        <p class="muted small">Spoken answers use an AI-generated voice. Uploaded audio is sent to the configured speech provider.</p>
+        <div id="voice-result" hidden aria-live="polite"><h3>Transcription</h3><p id="transcription" class="preserve"></p><p id="voice-answer" class="preserve"></p><p id="voice-error" class="alert error" hidden role="alert"></p><p id="voice-audio-notice" class="muted"></p><audio id="answer-audio" controls hidden></audio><a th:href="@{/sessions/{id}(id=${currentSession.id})}">Refresh saved session</a></div>
+      </section>
+    </section>
+    <section th:replace="~{fragments :: conversation}"></section>
+    <form th:if="${stage != 'COMPLETED'}" th:action="@{/ui/sessions/{id}/complete(id=${currentSession.id})}" method="post" class="end-session"><input type="hidden" name="expectedRevision" th:value="${currentSession.revision}"><button type="submit">End game</button><span class="muted small">Ends this session; history stays available.</span></form>
+  </div>
+</main><footer>Questions clarify the rules. Your table makes the moves.</footer></body></html>

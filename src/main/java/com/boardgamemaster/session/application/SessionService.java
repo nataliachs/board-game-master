@@ -48,7 +48,8 @@ public class SessionService {
         LOG.info("Game session created: sessionId={}, gameId={}", id, gameId);
         return current(id);
     }
-    public LessonView current(UUID id) { return view(contexts.load(id)); }
+    public LessonView current(UUID id) { return current(id, false); }
+    public LessonView current(UUID id, boolean explainAgain) { return view(contexts.load(id), explainAgain); }
     private LessonView view(SessionContextService.Context context) { return view(context, false); }
     private LessonView view(SessionContextService.Context context, boolean explainAgain) {
         var applicable = context.flow().sectionsFor(context.session().teachingDepth());
@@ -94,12 +95,17 @@ public class SessionService {
         return session;
     }
     // Provider calls happen outside database transactions. Revision comparison prevents stale context writes.
-    public MessageResult ask(UUID id, String question) {
+    public MessageResult ask(UUID id, String question) { return ask(id, question, null); }
+    /** Voice captures a revision before transcription; stale audio cannot silently use a different lesson. */
+    public MessageResult ask(UUID id, String question, Long expectedRevision) {
         if (question == null || question.isBlank() || question.length() > 4000) { throw new SessionException(INVALID_SESSION, "Question must be nonblank and at most 4000 characters"); }
         long started = System.nanoTime();
         var context = contexts.load(id);
         var session = context.session();
         session.requireActive();
+        if (expectedRevision != null && session.revision() != expectedRevision) {
+            throw new SessionException(SessionException.Code.SESSION_CONFLICT, "Session changed while transcribing; reload and ask again");
+        }
         var answer = answers.askPinned(session.gameId(), session.gameVersionId(), question.strip(), context.conversation());
         transaction.executeWithoutResult(status -> {
             repository.claimMessageRevision(id, session.revision());

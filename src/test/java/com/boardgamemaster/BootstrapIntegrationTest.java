@@ -80,6 +80,27 @@ class BootstrapIntegrationTest {
         assertThat(error.has("trace")).isFalse();
     }
 
+    @Test
+    void browserTeachingWorksWithAllAiProvidersDisabled() throws Exception {
+        var home = get("/");
+        assertThat(home.statusCode()).isEqualTo(200);
+        assertThat(home.body()).contains("Catan", "STANDARD\" selected");
+        String gameId = jdbc.queryForObject("SELECT id::text FROM games WHERE slug = 'catan'", String.class);
+        try (HttpClient browser = HttpClient.newHttpClient()) {
+            var created = browser.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ui/sessions"))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString("gameId=" + gameId + "&playerCount=4"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(created.statusCode()).isEqualTo(302);
+            var location = URI.create(created.headers().firstValue("Location").orElseThrow());
+            assertThat(location.toString()).doesNotContain("jsessionid");
+            var lesson = get(location.getPath());
+            assertThat(lesson.statusCode()).isEqualTo(200);
+            assertThat(lesson.body()).contains("Lesson 1 of 10", "Voice input isn't enabled here", "id=\"question\"")
+                    .doesNotContain("id=\"speak\"", "id=\"upload-audio\"");
+        }
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         try (HttpClient client = HttpClient.newHttpClient()) {
             return client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
