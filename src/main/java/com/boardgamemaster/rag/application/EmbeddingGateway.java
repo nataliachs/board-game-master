@@ -14,6 +14,7 @@ public class EmbeddingGateway {
     public EmbeddingGateway(EmbeddingClient client, EmbeddingProperties config) { this.client = client; this.config = config; }
 
     public EmbeddingProfile profile() { return client.profile(); }
+    public int maxInputCharacters() { return config.maxInputCharacters(); }
     public void requireConfigured() {
         if (profile().provider().equals("disabled")) {
             throw new EmbeddingException(EmbeddingException.Code.EMBEDDING_NOT_CONFIGURED,

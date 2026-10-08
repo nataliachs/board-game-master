@@ -12,6 +12,6 @@ public class OpenApiConfiguration {
         return new OpenAPI().info(new Info()
                 .title("Board Game Master API")
                 .version("v1")
-                .description("Multi-game platform. Catalog, ingestion, embedding indexing, version-scoped retrieval and default-version rule questions with cited answers are implemented; sessions and teaching remain planned."));
+                .description("Multi-game platform. Catalog, ingestion, embeddings, retrieval, grounded rule answers, persistent sessions and progressive teaching are implemented. Guided setup, voice and browser UI remain planned."));
     }
 }

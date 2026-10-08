@@ -7,12 +7,12 @@ Milestone 2 adds the corresponding `rules` packages for source ingestion and chu
 Milestone 3 adds `ai` embedding types/adapters and `rag` indexing/retrieval application,
 storage-port, PostgreSQL adapter and DTO HTTP operations.
 
-Future feature packages are reserved below; they contain documentation only:
-`session`, `gamemaster`, and `setup`.
+Milestone 6 adds `session.domain`, `session.application`, `session.infrastructure` and `session.api`.
+`gamemaster` and `setup` remain reserved boundaries containing documentation only.
 Add domain/application/infrastructure/api subpackages only as each milestone needs them.
 Milestone 4 adds provider-neutral LLM contracts, an opt-in HTTP adapter, a dedicated evidence
-prompt builder and stateless default-version question answering. Session, teaching, setup and
-speech implementations remain deferred.
+prompt builder and stateless default-version question answering. Milestone 6 reuses this pipeline
+for pinned session rulesets and bounded conversational context. Setup and speech remain deferred.
 
 `Game` represents a logical game; `GameVersion` owns edition, version label, language,
 and default/active flags. UUID ownership is enforced by a database foreign key and scoped
@@ -130,7 +130,7 @@ array; refusal becomes insufficient evidence and malformed/incomplete output bec
 of embeddings, disabled by default and accepts blank legacy provider/model values. Timing logs
 contain game/version IDs and durations, not prompts, questions, excerpts, answers or keys.
 
-Milestone 6 remains unstarted. Live OpenAI testing for Milestone 3 is still deferred; Milestone 4
+Milestone 7 remains unstarted. Live OpenAI testing for Milestone 3 is still deferred; Milestone 4
 provider interoperability and generated-answer quality are also unverified against live APIs.
 
 `RetrievalFilters` carries normalized language, source types, owned document IDs and explicitly
@@ -173,7 +173,7 @@ Console logs use Spring Boot ECS JSON; database health details remain private.
 
 Flyway owns schema changes; Hibernate uses `ddl-auto=validate` and open-in-view is disabled.
 V1 installs pgvector; V2 creates the catalog schema, V3 seeds reference metadata, V4 adds rules,
-and V5 adds embeddings and their ownership/profile indexes.
+V5 adds embeddings and their ownership/profile indexes, and V6 adds sessions/teaching/history.
 The database account needs extension-creation privileges for V1; production provisioning may
 install the extension ahead of time. Production credentials come from environment variables.
 
@@ -185,3 +185,74 @@ This bootstrap has no authentication and is intended for local development.
 Tests split fast MVC/error checks (`test`) from real PostgreSQL/pgvector startup and HTTP
 checks (`integrationTest`). `check` requires both, so unavailable Docker cannot yield a
 successful full verification. Neither suite calls paid services.
+
+## Sessions and deterministic teaching
+
+V6 adds `teaching_flows`, `teaching_sections`, `game_sessions` and `conversation_messages`.
+Teaching flows belong to a GameVersion and contain ordered uniquely keyed sections with
+QUICK/STANDARD/DETAILED applicability, authored explanation, examples, tips and reading pointers.
+Publishing validates content for every depth and is append-only; the latest publication is used
+for future sessions. A session pins both GameVersion and flow so subsequent default changes or
+content publication cannot rewrite its lesson sequence or ruleset. There is no edit/delete API.
+Composite foreign keys prevent a session using another version's flow or another flow's lesson.
+The current lesson and completed section keys are persisted independently from conversation.
+
+`GameSession` owns deterministic navigation and lifecycle transitions. Sessions start ACTIVE /
+TEACHING, with STANDARD depth by default. CONTINUE marks the current section complete and moves
+to the next applicable section; PREVIOUS preserves completion history. REPEAT returns stored
+content; EXPLAIN_AGAIN presents authored content/examples/tips without an LLM rewrite. Final
+CONTINUE enters PLAYING in the same session. Explicit completion records COMPLETED and endedAt;
+reads remain available while writes are rejected. SETUP is reserved as a stage only. No setup
+tables, triggers, steps, execution or teaching interruption/resume behavior are implemented.
+Responses explicitly state that physical setup has not been verified. These are Milestone 7 concerns.
+
+`SessionRepository` encapsulates parameterized JdbcTemplate persistence and immutable record
+mapping. The existing JPA transaction manager also binds JDBC work to the same datasource.
+`SessionService` validates players through the catalog, selects the default once and creates
+the session atomically. Navigation/completion use short row-lock transactions and an expected
+revision supplied by the client. Each committed mutation increments the revision; stale or
+duplicate actions fail with SESSION_CONFLICT (409), preventing double advancement.
+
+`SessionContextService` loads a consistent repeatable-read snapshot of the session, pinned
+game/edition/language, player count, depth, stage, flow and current lesson. It selects a bounded
+recent-message window, preserving whole messages in chronological order. Defaults are eight
+messages and 8000 content characters, bounded by validated `boardgame.session.*` properties.
+Older persisted history remains pageable separately. Oversized newest messages can exhaust
+this whole-message policy and leave no retained history; it does not summarize or truncate text.
+The service is the boundary for a future summarization policy; no summarizer is implemented.
+Session expansion selection is not implemented; existing retrieval defaults exclude expansions.
+
+`AnswerConversation` is a provider-neutral context contract. Retrieval combines the complete
+current question with the latest retained user question and lesson title, respecting both the
+configured embedding character limit and the 4000-character question limit. This deterministic
+topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.
+`RuleAnswerService.askPinned` validates version ownership without resolving the mutable default.
+The prompt includes structured session/context data as untrusted reference-resolution context;
+lesson text and past assistant answers never become source evidence. Existing version/profile
+isolation, threshold/deduplication, evidence gates, exact citations and LOW fallback still apply.
+The serialized prompt budget drops oldest context turns, then lesson explanation, then context
+metadata as necessary to retain the first retrieved evidence chunk. Evidence itself keeps the
+existing whole-chunk budget policy. No LLM chooses workflow state or lesson order.
+
+Questions call providers outside a database transaction. Only after successful generation or a
+LOW fallback does a short transaction compare-and-increment the captured session revision and
+append the USER/ASSISTANT pair. Both messages, answer citations and the revision commit together
+or roll back together. Concurrent session changes discard a stale answer with 409 and no partial
+history; provider requests already made can still incur charges. There is no automatic retry.
+Conversation ordering uses per-session sequence numbers with a uniqueness constraint; the
+session revision update serializes exchange writes. History pages use a before-sequence cursor
+and a bounded limit (1–100), returning the selected page oldest first. Completed sessions retain
+history but accept no further questions. Logs include IDs/timing and exclude conversation text.
+
+V6 includes original concise reference Catan teaching data (seven QUICK, nine STANDARD, ten
+DETAILED sections). It is an introductory overview, not a complete rulebook or verified physical
+setup guide. Reading pointers are authored metadata, not evidence citations; the seed does not
+import/index rule documents. Generic session/teaching code contains no game-specific branches.
+Provider-free teaching and opt-in paid Q&A are documented separately in README. Local APIs have
+no authentication, and production authorization/history retention policies remain future work.
+
+Milestone 6 tests cover domain transitions/depth/navigation, bounded structured context, real
+HTTP session/flow/history operations, default/flow pinning, grounded follow-ups, cross-session
+isolation, provider failures, atomic exchange rollback, concurrent navigation/questions and V5
+upgrade preservation. They use isolated PostgreSQL/pgvector containers and provider doubles.
+Live OpenAI testing for Milestones 3 and 4 remains explicitly deferred. Milestone 7 is unstarted.

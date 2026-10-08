@@ -34,14 +34,16 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-The product direction is planned behavior. Milestones 0–5 are complete and validated with
-provider doubles. Teaching, sessions, setup, voice and browser UI are not implemented yet.
+Milestones 0–6 are complete and validated with provider doubles. Sessions, progressive teaching
+and bounded conversational Q&A are implemented. Guided setup, voice and browser UI remain planned.
 
 ## Current Milestone
 
-**Milestone 5 — Production-Quality RAG (complete and validated with provider doubles)**
+**Milestone 6 — Game Sessions + Teaching Flow (complete and validated with provider doubles)**
 
-Milestone 6 remains unstarted. Live OpenAI testing for Milestones 3 and 4 remains deferred.
+Milestone 7 remains unstarted. The user completed a limited live OpenAI Lantern Trail walkthrough
+on 2026-10-08, exercising Milestones 3, 4 and 6. Broader live-model quality evaluation remains
+deferred; the original automated validation history below is preserved.
 
 ## Milestones
 
@@ -51,7 +53,7 @@ Milestone 6 remains unstarted. Live OpenAI testing for Milestones 3 and 4 remain
 - [x] Milestone 3 — Embeddings + Vector Search
 - [x] Milestone 4 — RAG Question Answering
 - [x] Milestone 5 — Production-Quality RAG
-- [ ] Milestone 6 — Game Sessions + Teaching Flow
+- [x] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
@@ -134,7 +136,7 @@ Expected:
 
 ## Milestone 4 — RAG Question Answering
 
-Status: Complete and validated with provider doubles. Live provider testing is deferred.
+Status: Complete and validated with provider doubles; a limited user-run live OpenAI demo passed on 2026-10-08. Broader live quality evaluation remains deferred.
 
 Expected:
 
@@ -171,7 +173,7 @@ Expected:
 
 ## Milestone 6 — Game Sessions + Teaching Flow
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Complete and validated with provider doubles; the user-run live teaching/session walkthrough passed on 2026-10-08. Setup integration remains Milestone 7.
 
 Expected:
 
@@ -293,21 +295,29 @@ The application should be demonstrable without Swagger or Postman.
 - HIGH answer confidence additionally requires complete strong-evidence citation coverage and meaningful quote lengths.
 - Checked-in original Catan question/corpus evaluation fixtures, deterministic retrieval-only metrics and isolated regression tests.
 
-Milestone 6 remains unstarted. No sessions, teaching, setup, voice or browser UI were implemented.
-Work remains on `milestone-5-production-quality-rag`. No commit, push, staging operation or
-branch change was performed during Milestone 5 work. Live OpenAI testing for Milestones 3 and 4
-remains deferred; this implementation makes no live-model quality claims.
+- Flyway V6 adds immutable version-bound TeachingFlow/TeachingSection data, persistent GameSession and ConversationMessage tables, ownership constraints, revision and history indexes.
+- Session creation resolves and pins the active default GameVersion and latest teaching flow, validates player count, defaults depth to STANDARD and starts TEACHING at the first applicable lesson.
+- Progressive CONTINUE/PREVIOUS/REPEAT/EXPLAIN_AGAIN controls persist the current/completed lessons. Explain-again reuses authored examples/tips without AI generation. Final CONTINUE enters PLAYING in the same session; explicit completion records COMPLETED and endedAt.
+- SessionContextService owns pinned game/edition/language, player/depth/stage/lesson and bounded recent conversation context. Generic grounded answering accepts the pinned ruleset, uses recent-topic retrieval cues, verifies new evidence/citations and preserves lesson state.
+- Atomic USER/ASSISTANT exchanges retain answer provenance. Provider failures leave no partial history. Revision checks reject duplicate navigation and stale answers after concurrent session changes, without holding a transaction across provider calls.
+- Reference Catan data is an original introductory overview with seven QUICK, nine STANDARD and ten DETAILED lessons. No commercial rulebook is imported; teaching text is not automatically indexed or used as citation evidence. Setup remains explicitly deferred.
+- README documents provider-free lesson demonstration, optional paid Q&A, configuration, flow publication, history and completion.
+
+Work remains uncommitted on `milestone-6-session-management`. No commit, push, staging or branch
+change is performed. Milestone 7 remains unstarted. The limited live OpenAI walkthrough below
+supplements the original deferred-testing record for Milestones 3 and 4; broader quality
+evaluation remains deferred and this implementation makes no general live-model quality claims.
 
 ## Major Architectural Decisions
 
-Teaching, setup, voice and demo UI decisions below describe planned work in Milestones 6–8;
-they do not change the implementation status of the completed catalog/ingestion features.
+Teaching/session decisions are implemented in Milestone 6. Setup, voice and demo UI decisions
+remain planned work in Milestones 7–8.
 - Modular monolith, organized by feature.
 - Game identifies the logical board game; GameVersion identifies its edition/language/ruleset.
 - Customers normally select Game only; the backend resolves a default GameVersion and pins it to the session.
 - Catan is the first reference dataset; shared engines are game-independent.
 - Implement only the requested milestone; stop before the next.
-- Root package is `com.boardgamemaster`; game, rules, embedding AI and retrieval features are implemented, while later feature packages remain reserved.
+- Root package is `com.boardgamemaster`; game, rules, embedding/LLM AI, retrieval, sessions and teaching are implemented. Setup and gamemaster package placeholders remain reserved.
 - Spring Boot 3.5.16, Gradle 8.14.4, springdoc 2.8.17, Java 21 toolchain; JUnit 5 and Boot-managed Testcontainers.
 - `test` runs without Docker; `integrationTest` requires it. `check` includes both and does not silently skip integration tests.
 - Local profile imports `.env`; production requires external database credentials and disables API documentation by default.
@@ -327,12 +337,12 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Indexing is explicit and synchronous, bounded by document chunk count and per-input characters. Existing imports are preserved and remain unindexed until requested. Ingestion does not call a provider.
 - Embedding configuration defaults to disabled; blank legacy provider/model/dimensions values retain safe defaults. An enabled provider requires a key. OpenAI HTTP requests have a fixed endpoint, no redirect following and bounded timeouts; errors never include upstream bodies or credentials.
 - The retrieval endpoint returns chunks, source metadata and cosine scores only. The separate question endpoint adds evidence-grounded generation and baseline confidence; similarity scores are not calibrated factual probabilities.
-- Stateless questions resolve the game's active default once per request. All supplied evidence and citations belong to that version. Sessions/conversation history remain Milestone 6; no new migration or dependency is required for Milestone 4.
+- Stateless questions resolve the game's active default once per request. Session questions use the pinned version and bounded context from Milestone 6. All evidence/citations remain version-scoped; no dependency changes are required. V6 adds session/teaching persistence without changing V1–V5.
 - The prompt builder keeps trusted instructions separate from JSON-encoded untrusted questions/documents. It requests evidence-only answers, exact supporting quotes and explicit insufficiency; bounded whole chunks preserve retrieval order.
 - LLM-generated citation IDs and quotes are checked against the exact prompt evidence. Public source metadata always comes from storage. Unknown/excluded sources, invented quotes, duplicate citations, weak cited evidence or model refusal produce the fixed LOW fallback with no sources.
 - `boardgame.answer.*` gates default to 0.5 minimum and 0.8 HIGH. Generation requires usable evidence; accepted confidence uses the weakest cited score plus model-reported sufficiency. HIGH additionally requires all strong supplied candidates to be cited and each quote to reach a configurable minimum length (12 by default). These remain heuristics, not validated probabilities.
 - The opt-in LLM adapter uses Responses strict structured outputs, temperature 0, bounded tokens, `store=false`, fixed HTTPS, no tools/redirects/retries and safe errors. Both providers default to disabled. External calls run outside DB transactions; timing logs omit text/keys. Legacy `AI_*` settings remain reserved.
-- Expansion selection uses owned EXPANSION document IDs, excluded by default. Filters intersect within a selected version and never change the default edition or introduce expansion/session domain models. Language defaults to the version's normalized language; mismatches return empty results without translation.
+- Expansion selection uses owned EXPANSION document IDs, excluded by default. Filters intersect within a selected version and never change its edition. A persisted session expansion selection remains unimplemented. Language defaults to the version's normalized language; mismatches return empty results without translation.
 - Rerankers may only permute the original candidates; invalid/altered/foreign candidates and errors fail safely. The default preserves cosine ordering and makes no paid call. Candidate limits bound cost/work and can truncate deduplicated recall; diagnostics explicitly flag saturation.
 - Duplicate suppression preserves source metadata and never deletes imports. Exact normalized content collapses only within matching version/language/type/document-version boundaries; near-contained overlap additionally requires the same document and the retained passage to contain the shorter candidate's source range. A longer passage is never dropped in favor of a shorter one. Distinct variants and source types remain separate.
 
@@ -393,6 +403,41 @@ The Phase 5 UI is a lightweight demonstration/testing interface.
 It must remain thin and reuse backend application logic.
 
 ## Validation
+
+### User-run live OpenAI walkthrough — 2026-10-08
+
+Evidence: Swagger response bodies supplied by the user in this conversation, including the
+attached final history response. These are user-run manual observations, not agent-executed
+provider tests or an automated benchmark. The user configured the project for OpenAI embeddings
+(`text-embedding-3-small`, 1536 dimensions) and generation (`gpt-4.1-mini`); the responses do not
+independently attest the running model identifiers. No API key was included in the evidence or
+read/copied into this documentation.
+
+- Used the separate Demo Game and original CC0 Lantern Trail rules, not Catan. Successful cited answers demonstrate usable indexed embeddings and live retrieval/generation for this narrow sample. A separate indexing response or retrieval-only response was not supplied, so no indexing counts or standalone retrieval measurements are claimed.
+- Stateless supported question: reaching the last space correctly returned taking a spare marker and returning the token to the first space, with an exact quote from Taking a turn, page 2. Confidence was MEDIUM; cited cosine similarity was approximately 0.5714.
+- Stateless unsupported question about buying a teleport card returned the fixed insufficient-evidence answer, LOW and no sources. The response does not establish whether retrieval gates or the model's insufficiency decision caused the fallback.
+- Published a two-section STANDARD-compatible teaching flow and created an ACTIVE / TEACHING session at TAKING_A_TURN with revision 0. The session retained the selected game version and published flow identifiers throughout the walkthrough.
+- Asked the supported question during teaching, then the follow-up "After taking that marker, where do I put my token?" Both returned correct cited answers with MEDIUM confidence (similarities approximately 0.7072 and 0.7734). GET session confirmed the lesson remained TAKING_A_TURN, completedSections stayed empty and revision advanced to 2. This is one successful contextual follow-up, not proof that history was necessary to answer or that arbitrary follow-ups work.
+- History returned four ordered USER/ASSISTANT messages with stored answer citations. CONTINUE at revision 2 completed the first lesson and moved to ENDING_THE_DEMO at revision 3. CONTINUE at revision 3 completed teaching and entered ACTIVE / PLAYING at revision 4 with readyToPlay=true, retaining the same session ID. Guided setup was explicitly absent.
+- Gameplay question about spare markers running out correctly returned finishing the current turn, ending the demo and counting collected markers, citing Ending the demo, page 2. Confidence was MEDIUM, cited similarity approximately 0.7557 and returned revision 5. A separate post-question GET confirming PLAYING was not supplied.
+- Explicit completion at revision 5 returned COMPLETED stage/status, revision 6, a populated endedAt and both completed section keys. A subsequent question returned INVALID_SESSION_ACTION / "This session is completed" as expected; the supplied body establishes the application error, while the HTTP status was not separately pasted.
+- Final history retained exactly six ordered messages (sequence numbers 1–6): three USER questions and three ASSISTANT answers, with their quotes/source metadata preserved. The rejected post-completion question added no history entry.
+- This supersedes blanket "all live testing deferred" statements for these exercised paths only. Broader Catan/multi-game live evaluation, long or ambiguous conversation quality, adversarial prompts, provider failure/rate-limit behavior, threshold calibration and factuality/hallucination measurement remain unverified. Previous automated/provider-double results and historical deferral statements remain unchanged below.
+- Documentation-only recording: no source/configuration edits, paid calls, database operations, staging, commit, push or branch change performed by the agent. Application tests were not rerun for this documentation-only update; the 254-test result below belongs to Milestone 6 implementation validation. Documentation whitespace check passed.
+
+### Milestone 6
+
+Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- Initial Java compilation passed. The first full check passed all 175 unit tests and 72/73 integration tests; its only failure was a historical Milestone 4 OpenAPI assertion that session endpoints must be absent. That assertion was updated for Milestone 6 while preserving the stateless question contract. Additional context-budget, Unicode, simultaneous-question and database rollback checks were then added. The subsequent full `check bootJar` passed all 254 tests. Final user-facing wording was also revalidated with the same full command.
+- `gradlew.bat check bootJar --no-daemon --console=plain` — PASS. All 254 tests passed: 179 unit and 75 isolated PostgreSQL/pgvector integration tests, zero failures/errors/skips. Executable JAR rebuilt successfully. Existing Milestone 0–5 checks remain passing, including deterministic retrieval evaluation.
+- Unit coverage includes ordered immutable depth-specific content, section validation, persisted-state transitions, completion, first/last navigation boundaries, nonadvancing controls, wrong-flow rejection, bounded context defaults/limits, whole-message selection, contextual retrieval bounds/Unicode and structured untrusted context that cannot become evidence. Prompt budgets remove older context before sacrificing retrieved evidence.
+- Seventeen new PostgreSQL/real-HTTP integration cases cover session creation/default depth/player validation, seeded Catan depth selection, generic flow publication, immutable flow/default pinning, progressive navigation and explain-again examples, saved citations and contextual follow-ups, question-preserved lessons/resumption, cross-session isolation and history cursors, empty/weak evidence fallback, safe provider timeout with no partial exchange, same-session PLAYING/COMPLETED transitions, concurrent navigation/questions, stale answers and atomic rollback after assistant-message insertion failure.
+- Migration checks cover fresh V6 startup, repeatability, flow/version/section/lifecycle constraints and V5-to-V6 upgrade preserving catalog rows, imported text, chunks and existing vectors. Earlier V1/V3/V4-to-current migration checks are retained and updated for the added migration.
+- Tests use local provider doubles and isolated Testcontainers databases; no paid calls or real API keys. Existing Compose data/services and private `.env` were not read, changed or migrated. Restart the local app to apply V6 for manual use. Provider-free teaching and optional live Q&A instructions are in README.
+- Live OpenAI testing for Milestones 3 and 4 remains explicitly deferred. Contextual follow-up quality, real-model grounding and confidence calibration remain unverified. Explain-again is deterministic authored content with examples/tips, not a live LLM rewrite. Reference lessons are introductory and do not execute/verify physical setup.
+- `git diff --check` and new-source whitespace checks — PASS. AGENTS.md, PROJECT_SPEC.md, build dependencies, provider adapters and V1–V5 migrations are unchanged. Optional SESSION_* defaults were added to `.env.example` and application configuration; private `.env` remains untouched.
+- Work remains unstaged/uncommitted on `milestone-6-session-management`. No commit, push or branch change was performed. Milestone 7 remains unstarted: no SetupFlow execution, setup triggers/steps, interruption/resume integration, voice or browser UI were added.
 
 ### Milestone 5
 
@@ -485,11 +530,14 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining automated Milestone 5 acceptance blockers are known. Docker/WSL is working. Milestone 6 remains unstarted; live provider validation remains deferred.
+- No remaining automated Milestone 6 acceptance blockers are known. Docker/WSL is working. Milestone 7 remains unstarted. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation remains deferred.
+- Session/teaching APIs are local-development functionality without authentication. Flows are append-only and existing sessions pin their original content. Reference Catan lessons are an original introductory overview, not a complete commercial rulebook; authored reading pointers are not verified generated-answer citations. Physical setup is not executed or confirmed.
+- Session context keeps a bounded window of whole messages; an oversized newest message can leave no retained history. Retrieval uses deterministic recent-user-topic/lesson cues rather than model-driven rewriting. The prompt budget may further remove context to retain source evidence. Summarization, persisted expansion selection, retention/deletion policies and live follow-up quality remain unimplemented/unverified.
+- Session revisions reject duplicate actions and discard stale generated answers after concurrent changes with no partial exchange. Provider requests completed before a conflict may still incur charges; no automatic retry is performed.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
 - Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; retrieval suppresses duplicates without deleting stored documents/chunks.
-- Live provider interoperability and semantic quality were not tested with a real API key. Tests establish the HTTP contract and deterministic database retrieval; they do not measure real-model relevance. Provider token limits can still reject text because local bounds count characters, not tokens.
-- Live OpenAI testing for Milestone 3 is explicitly deferred, as requested; Milestone 4 live testing is likewise deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates are uncalibrated heuristics; deterministic Milestone 5 regression metrics do not replace real-model relevance/grounding evaluation.
+- Automated tests establish provider contracts and deterministic database behavior without real API keys. The user-run live demo additionally exercised narrow retrieval/generation and session paths, but is not a real-model relevance benchmark. Provider token limits can still reject text because local bounds count characters, not tokens.
+- Live OpenAI testing for Milestones 3 and 4 was originally deferred; the limited walkthrough above now supplements that historical record. Broader quality evaluation remains deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates remain uncalibrated heuristics; neither deterministic Milestone 5 metrics nor this small manual demo replaces systematic grounding evaluation.
 - Candidate pools are bounded and can underfill top-K after duplicate suppression; diagnostics flag saturation. The default reranker preserves cosine ordering and does not claim a learned relevance improvement. Expansion selection is document-level only; language filtering does not translate or bypass version isolation. These remain local-development RAG improvements rather than a production-readiness claim.
 - Indexing is synchronous and calls the provider per pending chunk. A failed batch stores no new vectors but already completed provider requests may still incur costs. Exact search and synchronous indexing will need revisiting for larger datasets; no ANN index or background worker is included.
 - JDK 21 is now installed and machine-level `JAVA_HOME` and PATH are configured correctly. This existing Codex session retained the old environment; validation loaded the installed `JAVA_HOME` into the process explicitly. Open a fresh PowerShell window or restart Codex to inherit the updated environment. The earlier portable tooling/cache remains outside the repository at `D:\Projects\.bootstrap-tools`.

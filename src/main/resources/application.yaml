@@ -42,6 +42,9 @@ springdoc:
   swagger-ui:
     enabled: false
 boardgame:
+  session:
+    recent-message-limit: ${SESSION_RECENT_MESSAGE_LIMIT:8}
+    context-characters: ${SESSION_CONTEXT_CHARACTERS:8000}
   llm:
     provider: ${LLM_PROVIDER:disabled}
     model: ${LLM_MODEL:gpt-4.1-mini}

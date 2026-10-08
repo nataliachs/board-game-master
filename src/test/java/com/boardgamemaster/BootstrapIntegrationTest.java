@@ -45,14 +45,15 @@ class BootstrapIntegrationTest {
 
     @Test
     void migrationInstallsUsableVectorsAndIsRepeatable() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
         assertThat(jdbc.queryForObject("SELECT extversion FROM pg_extension WHERE extname = 'vector'",
                 String.class)).isNotBlank();
         assertThat(jdbc.queryForObject("SELECT '[1,2,3]'::vector <-> '[1,2,3]'::vector", Double.class))
                 .isZero();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForList("SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
-                String.class)).containsExactlyInAnyOrder("flyway_schema_history", "games", "game_versions", "rule_documents", "rule_chunks", "rule_chunk_embeddings");
+                String.class)).containsExactlyInAnyOrder("flyway_schema_history", "games", "game_versions", "rule_documents", "rule_chunks", "rule_chunk_embeddings",
+                        "teaching_flows", "teaching_sections", "game_sessions", "conversation_messages");
     }
 
     @Test

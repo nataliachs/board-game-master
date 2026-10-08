@@ -240,7 +240,7 @@ class RuleVectorIntegrationTest {
             """, document, version);
         db.update("INSERT INTO rule_chunks (id,document_id,game_version_id,content,chunk_index,start_offset,end_offset) VALUES (?,?,?,'Preserved text',0,0,14)", chunk, document, version);
         var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
         upgrade.validate();
         assertThat(db.queryForObject("SELECT content FROM rule_chunks WHERE id=?", String.class, chunk)).isEqualTo("Preserved text");
         assertThat(db.queryForObject("SELECT count(*) FROM rule_chunk_embeddings", Integer.class)).isZero();

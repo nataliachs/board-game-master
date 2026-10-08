@@ -14,8 +14,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {RuleSearchController.class, RuleQuestionController.class})
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
+@RestControllerAdvice(assignableTypes = {RuleSearchController.class, RuleQuestionController.class,
+        com.boardgamemaster.session.api.SessionController.class, com.boardgamemaster.session.api.TeachingController.class})
 public class RetrievalExceptionHandler {
     @ExceptionHandler(CatalogException.class)
     ResponseEntity<ApiError> catalog(CatalogException e, HttpServletRequest request) {
