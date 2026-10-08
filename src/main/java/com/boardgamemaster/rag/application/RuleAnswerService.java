@@ -36,11 +36,26 @@ public class RuleAnswerService {
         }
         long started = System.nanoTime();
         UUID versionId = games.resolveDefaultVersion(gameId, null).getId();
+        return answer(gameId, versionId, question, topK, threshold, filters, null, started);
+    }
+
+    public RuleAnswer askPinned(UUID gameId, UUID versionId, String question, AnswerConversation conversation) {
+        if (question == null || question.isBlank() || question.length() > 4000) {
+            throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Question must be nonblank and at most 4000 characters");
+        }
+        games.getVersion(gameId, versionId); // Ownership check without resolving a mutable catalog default.
+        return answer(gameId, versionId, question, null, null, null, conversation, System.nanoTime());
+    }
+
+    private RuleAnswer answer(UUID gameId, UUID versionId, String question, Integer topK, Double threshold,
+            RetrievalFilters filters, AnswerConversation conversation, long started) {
         try {
-            var retrieved = topK == null && threshold == null && filters == null
+            var retrieved = conversation != null ? retrieval.searchContextual(versionId, question.strip(), conversation)
+                    : topK == null && threshold == null && filters == null
                     ? retrieval.search(versionId, question.strip(), null)
                     : retrieval.search(versionId, question.strip(), topK, threshold, filters);
-            var prompt = prompts.build(versionId, question.strip(), retrieved.matches());
+            var prompt = conversation == null ? prompts.build(versionId, question.strip(), retrieved.matches())
+                    : prompts.build(versionId, question.strip(), retrieved.matches(), conversation);
             if (prompt.evidence().stream().noneMatch(m -> strongEnough(m.cosineSimilarity()))) { return fallback(gameId, versionId); }
             long llmStarted = System.nanoTime();
             LlmResponse generated;

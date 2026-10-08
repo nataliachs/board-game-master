@@ -208,12 +208,12 @@ class RuleQuestionIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains(original, document.getId().toString(), version.toString());
     }
-    @Test void openApiDocumentsQuestionContractAndNoSessionEndpoints() throws Exception {
+    @Test void openApiDocumentsStatelessQuestionsAlongsideSessionEndpoints() throws Exception {
         var response = request("GET", "/v3/api-docs", "");
         assertThat(response.statusCode()).isEqualTo(200);
         var paths = mapper.readTree(response.body()).path("paths");
         assertThat(paths.has("/api/v1/games/{gameId}/questions")).isTrue();
-        assertThat(paths.toString()).doesNotContain("/sessions");
+        assertThat(paths.has("/api/v1/sessions")).isTrue();
     }
     private void assertFallback(HttpResponse<String> response) throws Exception {
         assertThat(response.statusCode()).isEqualTo(200);

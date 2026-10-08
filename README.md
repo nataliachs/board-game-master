@@ -6,7 +6,7 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–5 are complete and validated with provider doubles. Live OpenAI testing remains deferred.**
+**Milestones 0–6 are complete and validated with provider doubles. Live OpenAI testing for Milestones 3 and 4 remains deferred.**
 The application supports generic Game and GameVersion metadata, registration/read APIs,
 default-version selection, and player-count validation. Catan has one seeded reference
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
@@ -14,8 +14,9 @@ for a specific version and read as ordered, traceable chunks. Explicit embedding
 version-scoped vector retrieval are implemented with opt-in provider configuration.
 Rule questions resolve the game's active default version and return cited answers or a fixed
 insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
-suppression, a reranking boundary and diagnostics. Milestone 6 remains unstarted; sessions, TeachingFlow, setup,
-voice and browser UI remain planned. Live OpenAI testing for Milestone 3 is still deferred.
+suppression, a reranking boundary and diagnostics. Milestone 6 adds persistent sessions, version-bound
+TeachingFlow, progressive lessons and bounded conversation context. Guided setup, voice and browser UI
+remain planned; Milestone 7 is unstarted.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
@@ -25,7 +26,7 @@ voice and browser UI remain planned. Live OpenAI testing for Milestone 3 is stil
 ## Planned product experience
 
 The sections below describe the intended product, not functionality already available in the
-Milestone 5 application. Current executable setup, API and test instructions are retained below.
+current application in its entirety. Current executable setup, API and test instructions are retained below.
 
 ## Customer Experience
 
@@ -251,12 +252,14 @@ Active configuration:
 | `ANSWER_HIGH_EVIDENCE_SIMILARITY` | `0.8`; HIGH confidence gate, above the minimum and at most 1 |
 | `ANSWER_MAX_CONTEXT_CHARACTERS` | `24000`; serialized question/evidence budget, 1000–160000 UTF-16 characters |
 | `ANSWER_MINIMUM_QUOTE_CHARACTERS` | `12`; minimum supporting quote length for HIGH confidence, 1–1000 |
+| `SESSION_RECENT_MESSAGE_LIMIT` | `8`; maximum recent messages considered for contextual Q&A, 2–50 |
+| `SESSION_CONTEXT_CHARACTERS` | `8000`; whole recent-message content budget, 1000–16000 |
 
 Speech, `AI_*` and `RAG_CHUNK_*` settings remain reserved.
 Embedding settings and `RAG_TOP_K` are active. No provider keys are needed for ingestion,
 startup or automated tests; the default provider is disabled.
 Active ingestion configuration uses `boardgame.rules.*` / `RULE_*`; the older `RAG_CHUNK_*`
-proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer limits fail startup. Add optional
+proposals remain inactive. Invalid ingestion/embedding/retrieval/LLM/answer/session limits fail startup. Add optional
 overrides to your existing `.env`; do not overwrite it with the example file.
 The `prod` profile does not read `.env` and disables API documentation by default.
 Flyway creates the vector extension; the database migration role needs suitable privileges.
@@ -269,6 +272,8 @@ V3 adds Catan reference metadata; V4 adds version-scoped rule documents and chun
 Restart an already-running application to pick up the new code and migrations.
 V5 adds embedding storage and its ruleset/profile index. Existing database volumes should be
 retained. No rules or embeddings are seeded automatically; existing documents stay unindexed.
+V6 adds sessions, conversation history and version-bound teaching, including original introductory
+Catan lessons. Existing indexed vectors are retained. No guided setup is included yet.
 
 ```powershell
 .\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
@@ -296,8 +301,8 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 
 ```
 
-Health should contain `"status":"UP"`. Swagger documents the catalog and rule-document operations.
-The test suite passed with Docker on 2026-10-07; see development status for actual results.
+Health should contain `"status":"UP"`. Swagger documents catalog, rules, retrieval, questions,
+sessions and teaching operations. See development status for dated validation and current totals.
 
 ## Implemented catalog API
 
@@ -585,8 +590,8 @@ Live OpenAI testing for Milestones 3 and 4 remains deferred.
 ```
 
 The backend resolves the game's active default GameVersion, then reuses version/profile-scoped
-retrieval. Clients do not select an edition. Each request resolves the current default; sessions
-and conversation history are not implemented. Questions must be nonblank and at most 4000
+retrieval. Clients do not select an edition. This stateless endpoint resolves the current default;
+use the session endpoints below for a pinned ruleset and conversation history. Questions must be nonblank and at most 4000
 characters, also within the configured embedding input limit.
 
 For live testing, first import and index a permitted document as described above. Add or update
@@ -600,7 +605,7 @@ LLM_API_KEY=your-private-api-key
 
 Both embedding and LLM providers are opt-in. Blank legacy LLM settings remain disabled/default.
 Restart after configuration changes. No extra database migration is needed for Milestone 4;
-Flyway remains at V5. Requests with indexed rules may incur a query-embedding charge and an
+Milestone 6 adds Flyway V6 for sessions and teaching. Requests with indexed rules may incur a query-embedding charge and an
 LLM charge. Default tests require neither keys nor paid calls. A private key may be used in both
 key settings if it has appropriate permissions, but each setting must be configured explicitly.
 
@@ -622,7 +627,8 @@ The dedicated prompt builder keeps trusted instructions separate from JSON-encod
 questions/document data, prohibits invented rules and asks the model to decline unsupported or
 conflicting evidence. Context preserves complete chunks in retrieval order within its serialized
 character budget. Generation uses the [OpenAI Responses structured-output contract](https://developers.openai.com/api/docs/guides/structured-outputs),
-temperature 0, a bounded output budget and `store=false`; no tools or conversation persistence.
+temperature 0, a bounded output budget and `store=false`; no tools or provider-side conversation persistence.
+Session conversation history is stored locally by the application.
 The default [GPT-4.1 mini model](https://developers.openai.com/api/docs/models/gpt-4.1-mini) supports this contract.
 
 Confidence is a baseline evidence heuristic, not a calibrated probability. With no supplied chunk
@@ -650,21 +656,133 @@ Provider outages remain errors rather than being disguised as low-confidence ans
 embeddings configured and an empty index, no query-embedding or LLM call is made; if embeddings
 are disabled, the existing `EMBEDDING_NOT_CONFIGURED` error still applies.
 
-## Planned API examples
+## Implemented sessions and teaching API
 
-These are design examples, not implemented endpoints:
-```http
-POST /api/v1/sessions
-Content-Type: application/json
+Restart the application to apply V6. It adds four tables without modifying existing games,
+rule documents, chunks or vectors. The Catan reference version has ten original concise teaching
+sections: QUICK selects seven, STANDARD nine and DETAILED ten. This is an introductory overview,
+not a complete commercial rulebook. Physical setup is not executed or marked complete.
+Teaching/navigation require no provider keys, indexing or paid calls.
 
-{"gameId":"<game-id>","playerCount":4,"teachingDepth":"STANDARD"}
+Create a session in Swagger or PowerShell:
+
+```powershell
+$base = 'http://localhost:8080/api/v1'
+$body = @{ gameId = '00000000-0000-0000-0000-000000000001'; playerCount = 4 } | ConvertTo-Json
+$lesson = Invoke-RestMethod -Method Post -Uri "$base/sessions" -ContentType 'application/json' -Body $body
+$sessionId = $lesson.session.id
+$lesson | ConvertTo-Json -Depth 10
 ```
-```http
-POST /api/v1/sessions/<session-id>/messages
-Content-Type: application/json
 
-{"message":"What happens if I roll a seven?"}
+Creation returns HTTP 201 and a Location header. Optional `teachingDepth` is QUICK, STANDARD
+(default), or DETAILED. The backend validates player count, resolves the active default ruleset
+once and pins both its GameVersion and current TeachingFlow. Changing either the catalog default
+or publishing a replacement flow does not change existing sessions. A version needs a configured
+flow before a session can be created; missing configuration returns 409.
+
+`GET /sessions/{id}` returns persisted session state, current lesson, displayed explanation,
+lesson number/total, completed section keys, revision and readiness notice. Navigation accepts
+the most recently returned revision to prevent accidental double advancement:
+
+```powershell
+$body = @{ action = 'CONTINUE'; expectedRevision = $lesson.session.revision } | ConvertTo-Json
+$lesson = Invoke-RestMethod -Method Post -Uri "$base/sessions/$sessionId/teaching/actions" `
+    -ContentType 'application/json' -Body $body
+$lesson | ConvertTo-Json -Depth 10
 ```
+
+Actions are CONTINUE, PREVIOUS, REPEAT and EXPLAIN_AGAIN. CONTINUE completes the current section
+and advances to the next applicable lesson. PREVIOUS preserves completed progress, stopping at
+the first lesson. REPEAT returns the saved explanation. EXPLAIN_AGAIN presents the same authored
+content with its examples/tips, without an LLM rewrite or progress change. Every action updates
+the revision; stale requests return `SESSION_CONFLICT` (409). Reload with GET before retrying.
+The last CONTINUE enters PLAYING in the same session and displays a ready-to-play notice.
+This Milestone 6 transition does not claim physical setup was completed; setup integration is
+Milestone 7 and remains unstarted. Lesson navigation is restricted to TEACHING.
+
+Questions work during teaching and playing through the existing grounded-answer pipeline:
+
+```powershell
+$body = @{ question = 'How do I collect resources?' } | ConvertTo-Json
+$reply = Invoke-RestMethod -Method Post -Uri "$base/sessions/$sessionId/messages" `
+    -ContentType 'application/json' -Body $body
+$reply | ConvertTo-Json -Depth 10
+$lesson = Invoke-RestMethod -Uri "$base/sessions/$sessionId"
+```
+
+Use `question`, not `message`. Questions preserve the current lesson and completed sections.
+The response contains `sessionId`, new `revision`, `currentSectionKey` and the existing nested
+`answer`/confidence/sources contract. Successful answers and LOW fallbacks persist an atomic
+USER/ASSISTANT pair, including source citations. Provider failures persist neither message and
+leave workflow state unchanged. Live Q&A still requires explicitly configured embedding/LLM
+providers and indexed permitted documents for the pinned version. The seeded Catan lessons are
+not automatically imported or indexed as rule evidence. With providers disabled, Q&A returns
+the existing safe 503 errors; teaching continues to work.
+
+`SessionContextService` loads game, pinned edition/language, player count, depth, stage, current
+lesson and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8` (2–50) and
+`SESSION_CONTEXT_CHARACTERS=8000` (1000–16000). They are optional additions to a private `.env`;
+omitting them uses defaults. Only whole recent messages within both limits are retained.
+The retrieval query includes the current question, latest retained user question and lesson title,
+capped at 4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
+Older answers and lesson text are untrusted context, never substitutes for source evidence.
+The existing serialized prompt budget also applies and can further remove older context to preserve evidence.
+This deterministic follow-up strategy is tested with doubles; live-model understanding remains
+unverified. Session expansion selection and summarization are not implemented.
+
+Read history (oldest first within each bounded page):
+
+```powershell
+Invoke-RestMethod -Uri "$base/sessions/$sessionId/messages?limit=20" | ConvertTo-Json -Depth 12
+```
+
+Use the first returned `sequenceNumber` as `beforeSequence` for older pages. Limits are 1–100.
+All stored history remains in PostgreSQL; only recent bounded context is sent to the provider.
+Concurrent questions/navigation are guarded by session revisions. An answer generated against
+changed session state is discarded with 409 and no partial exchange; an already completed
+provider request may still incur a charge. No transaction or row lock spans provider calls.
+
+End the session explicitly from either active stage:
+
+```powershell
+$lesson = Invoke-RestMethod -Uri "$base/sessions/$sessionId"
+$body = @{ expectedRevision = $lesson.session.revision } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$base/sessions/$sessionId/complete" `
+    -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 10
+```
+
+Completion sets stage/status to COMPLETED and records `endedAt`. Reads/history remain available;
+further questions and navigation return 409. Unknown sessions return 404; malformed requests and
+invalid history bounds return 400. These local-development APIs have no authentication.
+
+For another game/version, publish a flow with
+`POST /api/v1/game-versions/{versionId}/teaching-flows`:
+
+```json
+{
+  "name": "Original demo lessons",
+  "sections": [
+    {
+      "key": "OBJECTIVE", "order": 0, "title": "Your goal",
+      "explanation": "Move your token to the final space to win.",
+      "depths": ["QUICK", "STANDARD", "DETAILED"],
+      "examples": ["Check the final space before your first turn."],
+      "tips": [], "references": ["Original sample: objective section"]
+    }
+  ]
+}
+```
+
+GET the same URL to inspect the latest flow. Publishing is append-only: the most recently
+published flow is used for future sessions. Each flow has 1–100 uniquely keyed/ordered sections
+and at least one applicable section for each depth. Omitted depths mean all three; omitted
+examples/tips/references are empty. Explanations are authored, bounded and game-specific data.
+References are author-supplied reading pointers, not generated verified citations. Shared teaching
+logic has no Catan-specific sequence. Only publish content you have permission to use.
+
+Automated checks include session/domain/context tests and isolated PostgreSQL/HTTP integration
+tests with known-vector embedding and LLM doubles. Live OpenAI testing for Milestones 3 and 4
+remains deferred; no voice, browser UI or SetupFlow endpoints are added.
 
 ## Development Roadmap
 
@@ -674,12 +792,12 @@ Content-Type: application/json
 - [x] Milestone 3 — Embeddings + Vector Search
 - [x] Milestone 4 — RAG Question Answering
 - [x] Milestone 5 — Production-Quality RAG
-- [ ] Milestone 6 — Game Sessions + Teaching Flow
+- [x] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 6 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 7 is unstarted.
 
 ## Adding a game
 

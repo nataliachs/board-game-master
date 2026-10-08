@@ -40,6 +40,12 @@ public class RuleRetrievalService {
     }
     public SearchResult search(UUID versionId, String query, Integer topK) { return search(versionId, query, topK, null, null); }
 
+    public SearchResult searchContextual(UUID versionId, String question, AnswerConversation conversation) {
+        embeddings.validateText(question);
+        String query = conversation.retrievalQuery(question, Math.min(4000, embeddings.maxInputCharacters()));
+        return search(versionId, query, null);
+    }
+
     public SearchResult search(UUID versionId, String query, Integer topK, Double threshold, RetrievalFilters requested) {
         long started = System.nanoTime();
         var version = documents.getVersion(versionId);
