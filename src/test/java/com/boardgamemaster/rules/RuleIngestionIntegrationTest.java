@@ -209,7 +209,7 @@ class RuleIngestionIntegrationTest {
         var db = new JdbcTemplate(new DriverManagerDataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()));
         db.update("UPDATE games SET description='Preserved user metadata' WHERE slug='catan'");
         var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(4);
         upgrade.validate();
         assertThat(db.queryForObject("SELECT description FROM games WHERE slug='catan'", String.class)).isEqualTo("Preserved user metadata");
         assertThat(db.queryForObject("SELECT count(*) FROM rule_documents", Long.class)).isZero();

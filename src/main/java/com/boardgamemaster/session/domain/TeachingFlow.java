@@ -12,7 +12,8 @@ public record TeachingFlow(UUID id, UUID gameVersionId, String name, Instant cre
         name = name.strip();
         sections = sections.stream().sorted(Comparator.comparingInt(TeachingSection::order)).toList();
         if (sections.stream().map(TeachingSection::key).distinct().count() != sections.size()
-                || sections.stream().map(TeachingSection::order).distinct().count() != sections.size()) { throw invalid(); }
+                || sections.stream().map(TeachingSection::order).distinct().count() != sections.size()
+                || sections.stream().filter(TeachingSection::setupTrigger).count() > 1) { throw invalid(); }
         for (var depth : TeachingDepth.values()) {
             if (sections.stream().noneMatch(s -> s.depths().contains(depth))) { throw invalid(); }
         }

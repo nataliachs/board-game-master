@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 @RestControllerAdvice(assignableTypes = {RuleSearchController.class, RuleQuestionController.class,
-        com.boardgamemaster.session.api.SessionController.class, com.boardgamemaster.session.api.TeachingController.class})
+        com.boardgamemaster.session.api.SessionController.class, com.boardgamemaster.session.api.TeachingController.class, com.boardgamemaster.setup.api.SetupController.class, com.boardgamemaster.setup.api.SetupFlowController.class})
 public class RetrievalExceptionHandler {
     @ExceptionHandler(CatalogException.class)
     ResponseEntity<ApiError> catalog(CatalogException e, HttpServletRequest request) {

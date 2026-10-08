@@ -13,11 +13,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class TeachingService {
     private final SessionRepository repository;
     private final GameVersionRepository versions;
-    public TeachingService(SessionRepository repository, GameVersionRepository versions) { this.repository = repository; this.versions = versions; }
+    private final com.boardgamemaster.setup.infrastructure.SetupRepository setups;
+    public TeachingService(SessionRepository repository, GameVersionRepository versions, com.boardgamemaster.setup.infrastructure.SetupRepository setups) { this.setups = setups; this.repository = repository; this.versions = versions; }
     @Transactional
     public TeachingFlow publish(UUID version, String name, List<TeachingSection> sections) {
         versions.findById(version).orElseThrow(() -> new CatalogException(CatalogException.Code.GAME_VERSION_NOT_FOUND, "Game version was not found")).requireActive();
         var flow = new TeachingFlow(UUID.randomUUID(), version, name, Instant.now(), sections);
+        if (flow.sections().stream().anyMatch(TeachingSection::setupTrigger)) { setups.requireLatest(version); }
         repository.insertFlow(flow);
         return flow;
     }

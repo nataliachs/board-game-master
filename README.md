@@ -6,7 +6,9 @@ The platform is designed to support multiple board games. Catan is used as the i
 
 ## Current state
 
-**Milestones 0–6 are complete and validated with provider doubles. Live OpenAI testing for Milestones 3 and 4 remains deferred.**
+**Milestones 0–7 are implemented and validated with provider doubles.**
+A limited user-run live OpenAI Lantern Trail walkthrough passed on 2026-10-08; broader live
+quality evaluation remains deferred. See [the recorded evidence and limitations](docs/DEVELOPMENT_STATUS.md#user-run-live-openai-walkthrough--2026-10-08).
 The application supports generic Game and GameVersion metadata, registration/read APIs,
 default-version selection, and player-count validation. Catan has one seeded reference
 version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
@@ -15,8 +17,8 @@ version-scoped vector retrieval are implemented with opt-in provider configurati
 Rule questions resolve the game's active default version and return cited answers or a fixed
 insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
 suppression, a reranking boundary and diagnostics. Milestone 6 adds persistent sessions, version-bound
-TeachingFlow, progressive lessons and bounded conversation context. Guided setup, voice and browser UI
-remain planned; Milestone 7 is unstarted.
+TeachingFlow, progressive lessons and bounded conversation context. Milestone 7 adds persisted
+guided setup with teaching interruption/resume. Voice and browser UI remain planned for Milestone 8.
 
 - [Master specification](PROJECT_SPEC.md)
 - [Agent instructions](AGENTS.md)
@@ -55,7 +57,7 @@ It is not intended to function primarily as an open-ended chatbot.
 
 Teaching is progressive rather than delivered as one large explanation.
 
-The planned backend will track TeachingFlow state so customers can:
+The backend tracks TeachingFlow state so customers can:
 
 - continue
 - go back
@@ -69,7 +71,7 @@ Questions will be answered using Retrieval-Augmented Generation (RAG) against ve
 
 Setup is integrated into the teaching experience.
 
-The planned backend will track setup state independently from the LLM.
+The backend tracks setup state independently from the LLM through version-bound authored steps.
 
 This allows customers to be guided step-by-step through physically preparing the game before gameplay begins.
 
@@ -106,7 +108,7 @@ Core concepts include:
 AI integrations are kept behind provider abstractions.
 
 The project uses PostgreSQL with pgvector installed. Rule-document storage and semantic
-retrieval and cited answer generation are implemented; the session/teaching/setup concepts above remain planned.
+retrieval, cited answer generation, sessions, teaching and guided setup are implemented; voice and browser UI remain planned.
 
 ## RAG
 
@@ -148,7 +150,7 @@ Return Answer + Sources
 
 The system should prefer saying it cannot confidently verify a rule rather than inventing one.
 
-## Teaching depth and session stages (planned)
+## Teaching depth and session stages
 
 Choose QUICK, STANDARD or DETAILED; STANDARD is the default café experience. These are
 explanation depths within the same Game Master session. The normal journey is:
@@ -160,7 +162,7 @@ Customers normally select Game only. The backend resolves and pins an active def
 GameVersion. Application-managed TEACHING / SETUP / PLAYING / COMPLETED stages and persisted
 lesson/setup positions control progress; the LLM does not decide the next step. TeachingFlow
 chooses what comes next; RAG supplies verified rule evidence. Clarifications preserve both
-lesson and setup progress. Review Rules returns to the active game without resetting it.
+lesson and setup progress. The planned browser UI will provide Review Rules without resetting the session.
 
 ## Planned architecture
 
@@ -273,7 +275,8 @@ Restart an already-running application to pick up the new code and migrations.
 V5 adds embedding storage and its ruleset/profile index. Existing database volumes should be
 retained. No rules or embeddings are seeded automatically; existing documents stay unindexed.
 V6 adds sessions, conversation history and version-bound teaching, including original introductory
-Catan lessons. Existing indexed vectors are retained. No guided setup is included yet.
+Catan lessons. V7 adds setup flows/steps, persisted session setup progress and a setup trigger
+in a new reference teaching flow. Existing lessons, sessions, history, documents and vectors are retained.
 
 ```powershell
 .\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
@@ -577,7 +580,7 @@ The test writes `build/reports/retrieval-evaluation.json` with per-question diag
 MRR@3 and unsupported-question abstentions. See development status for the actual recorded run.
 Hand-assigned vectors make this a deterministic pipeline regression benchmark; it does not
 measure OpenAI embedding relevance, hallucination rate or production confidence calibration.
-Live OpenAI testing for Milestones 3 and 4 remains deferred.
+The limited user-run OpenAI walkthrough is recorded in DEVELOPMENT_STATUS.md; broader live quality evaluation remains deferred.
 
 ## Implemented rule question API
 
@@ -647,7 +650,7 @@ and the separate answer acceptance gates both apply, so lowering the retrieval t
 does not allow weak cited evidence into an answer. Real-model relevance, threshold calibration
 and resistance to adversarial prompts remain unverified. Exact
 quotes validate provenance but cannot prove that all generated prose is semantically supported.
-Live OpenAI testing for Milestone 3 remains deferred, and live Milestone 4 testing is also deferred.
+A narrow live OpenAI walkthrough has passed; broader retrieval/grounding evaluation remains deferred.
 
 Unknown games return 404; inactive games/default versions or missing defaults return 409;
 invalid questions return 400. Existing embedding errors retain their codes/statuses. Disabled,
@@ -658,10 +661,12 @@ are disabled, the existing `EMBEDDING_NOT_CONFIGURED` error still applies.
 
 ## Implemented sessions and teaching API
 
-Restart the application to apply V6. It adds four tables without modifying existing games,
-rule documents, chunks or vectors. The Catan reference version has ten original concise teaching
-sections: QUICK selects seven, STANDARD nine and DETAILED ten. This is an introductory overview,
-not a complete commercial rulebook. Physical setup is not executed or marked complete.
+Restart the application to apply V6 and V7. Existing content and sessions are preserved.
+The new Catan reference teaching flow has eleven concise sections: QUICK selects eight,
+STANDARD ten and DETAILED eleven, including PHYSICAL_SETUP at every depth. It is an introductory
+overview, not a complete commercial rulebook. Six authored setup steps record the user's confirmation;
+the application cannot inspect the physical board. If a custom Catan teaching flow was already
+published, V7 preserves it as the current flow instead of replacing it.
 Teaching/navigation require no provider keys, indexing or paid calls.
 
 Create a session in Swagger or PowerShell:
@@ -676,7 +681,7 @@ $lesson | ConvertTo-Json -Depth 10
 
 Creation returns HTTP 201 and a Location header. Optional `teachingDepth` is QUICK, STANDARD
 (default), or DETAILED. The backend validates player count, resolves the active default ruleset
-once and pins both its GameVersion and current TeachingFlow. Changing either the catalog default
+once and pins its GameVersion, current TeachingFlow and configured SetupFlow. Changing either the catalog default
 or publishing a replacement flow does not change existing sessions. A version needs a configured
 flow before a session can be created; missing configuration returns 409.
 
@@ -691,16 +696,17 @@ $lesson = Invoke-RestMethod -Method Post -Uri "$base/sessions/$sessionId/teachin
 $lesson | ConvertTo-Json -Depth 10
 ```
 
-Actions are CONTINUE, PREVIOUS, REPEAT and EXPLAIN_AGAIN. CONTINUE completes the current section
-and advances to the next applicable lesson. PREVIOUS preserves completed progress, stopping at
+Actions are CONTINUE, PREVIOUS, REPEAT and EXPLAIN_AGAIN. CONTINUE normally completes the current
+section and advances. At a section with setupTrigger=true, it starts unfinished setup instead,
+saving this lesson as the return position without completing it. PREVIOUS preserves completed progress, stopping at
 the first lesson. REPEAT returns the saved explanation. EXPLAIN_AGAIN presents the same authored
 content with its examples/tips, without an LLM rewrite or progress change. Every action updates
 the revision; stale requests return `SESSION_CONFLICT` (409). Reload with GET before retrying.
 The last CONTINUE enters PLAYING in the same session and displays a ready-to-play notice.
-This Milestone 6 transition does not claim physical setup was completed; setup integration is
-Milestone 7 and remains unstarted. Lesson navigation is restricted to TEACHING.
+Lesson navigation is restricted to TEACHING. Setup completion returns to the saved lesson in
+TEACHING; a further CONTINUE advances normally. A completed setup trigger does not run twice.
 
-Questions work during teaching and playing through the existing grounded-answer pipeline:
+Questions work during teaching, setup and playing through the existing grounded-answer pipeline:
 
 ```powershell
 $body = @{ question = 'How do I collect resources?' } | ConvertTo-Json
@@ -725,10 +731,10 @@ lesson and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8
 omitting them uses defaults. Only whole recent messages within both limits are retained.
 The retrieval query includes the current question, latest retained user question and lesson title,
 capped at 4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
-Older answers and lesson text are untrusted context, never substitutes for source evidence.
+Older answers, lesson text and the current setup instruction are untrusted context, never substitutes for source evidence.
 The existing serialized prompt budget also applies and can further remove older context to preserve evidence.
-This deterministic follow-up strategy is tested with doubles; live-model understanding remains
-unverified. Session expansion selection and summarization are not implemented.
+The limited live walkthrough demonstrated one follow-up; broader live-model understanding remains
+unverified. Setup-specific Q&A has automated provider-double coverage only. Session expansion selection and summarization are not implemented.
 
 Read history (oldest first within each bounded page):
 
@@ -742,7 +748,7 @@ Concurrent questions/navigation are guarded by session revisions. An answer gene
 changed session state is discarded with 409 and no partial exchange; an already completed
 provider request may still incur a charge. No transaction or row lock spans provider calls.
 
-End the session explicitly from either active stage:
+End the session explicitly from any active stage:
 
 ```powershell
 $lesson = Invoke-RestMethod -Uri "$base/sessions/$sessionId"
@@ -781,8 +787,92 @@ References are author-supplied reading pointers, not generated verified citation
 logic has no Catan-specific sequence. Only publish content you have permission to use.
 
 Automated checks include session/domain/context tests and isolated PostgreSQL/HTTP integration
-tests with known-vector embedding and LLM doubles. Live OpenAI testing for Milestones 3 and 4
-remains deferred; no voice, browser UI or SetupFlow endpoints are added.
+tests with known-vector embedding and LLM doubles. The limited live walkthrough supplements
+these results; broader evaluation remains deferred. Voice and browser UI remain unimplemented.
+
+## Implemented guided setup API
+
+Restart the application to apply V7; retain the existing database volume. No new environment
+variables or provider keys are needed for setup. In Swagger, create a Catan session, Continue
+through INTRODUCTION, OBJECTIVE and COMPONENTS to PHYSICAL_SETUP, then Continue again to enter
+SETUP. `GET /api/v1/sessions/{id}/setup` now displays BOARD, step 1 of 6, including notes/warnings.
+The reference text is original, concise beginner guidance checked against the
+[official CATAN base-game rules, pages 2–4](https://www.catan.com/sites/default/files/2021-06/catan_base_rules_2020_200707.pdf).
+Use the physical 5th Edition beginner diagram; diagrams and commercial rulebook files are not bundled.
+The text records confirmation rather than detecting board state, and is not an indexed Q&A source.
+
+Every POST below accepts `{ "expectedRevision": <latest session revision> }`:
+
+| Endpoint under `/api/v1/sessions/{id}/setup` | Behavior |
+| --- | --- |
+| GET (no suffix) | Current step, number/total, pinned flow and persisted progress |
+| POST `/start` | Start explicitly from a TEACHING lesson and save its return position |
+| POST `/next` | Confirm this step and show the next; at the last step use complete |
+| POST `/previous` | Move back, preserving confirmed steps; at the first step stay there |
+| POST `/repeat` | Show this step again without changing progress |
+| POST `/restart` | Reset setup to its first step; retain teaching progress and conversation |
+| POST `/complete` | Confirm the final step after all previous steps; return to saved TEACHING lesson |
+
+Example after entering setup (using `$base` and `$sessionId` from above):
+
+```powershell
+$setup = Invoke-RestMethod -Uri "$base/sessions/$sessionId/setup"
+$setup | ConvertTo-Json -Depth 10
+$body = @{ expectedRevision = $setup.session.revision } | ConvertTo-Json
+$setup = Invoke-RestMethod -Method Post -Uri "$base/sessions/$sessionId/setup/next" `
+    -ContentType 'application/json' -Body $body
+```
+
+Read each instruction and repeat Next with the latest revision until the final step. Then POST
+`/setup/complete`. GET the session: stage must be TEACHING at PHYSICAL_SETUP, not PLAYING.
+Continue teaching until the same session enters PLAYING. No provider calls occur in this journey.
+Stale revisions, premature completion, Next at the final step and setup actions during PLAYING or
+COMPLETED return 409. Restart is available after setup has started, during SETUP or resumed TEACHING;
+it clears setup confirmations and saves the current teaching return point, without deleting history.
+
+To test interruption, ask through the existing `/sessions/{id}/messages` endpoint during SETUP
+using an indexed permitted document and configured providers. Reload setup afterward: only the
+revision should have increased; the step, confirmations and return lesson must remain unchanged.
+These questions may incur provider charges. A provider failure stores no partial exchange; an
+in-flight answer loses a revision race with setup navigation/restart and returns 409 without history.
+
+For another game, publish setup content before a teaching flow containing a trigger. Using the
+Lantern Trail `$version.id` and `$game.id` from the earlier demo (never the Catan reference IDs):
+
+```powershell
+$flow = @{
+    name = 'Lantern Trail guided setup'
+    steps = @(
+        @{ key = 'TRAIL'; order = 0; title = 'Prepare the trail'; instruction = 'Place five paper spaces in a row. Give each player one token and put all tokens on the first space.' }
+        @{ key = 'MARKERS'; order = 1; title = 'Prepare markers'; instruction = 'Put three spare markers beside the trail. Choose a starting player together.'; notes = @('Confirm the table together.'); warnings = @() }
+    )
+} | ConvertTo-Json -Depth 8
+Invoke-RestMethod -Method Post -Uri "$base/game-versions/$($version.id)/setup-flows" `
+    -ContentType 'application/json' -Body $flow
+$flow = @{
+    name = 'Lantern Trail lessons with setup'
+    sections = @(
+        @{ key = 'PREPARE'; order = 0; title = 'Prepare to play'; explanation = 'Continue to prepare the physical table.'; setupTrigger = $true }
+        @{ key = 'TURN'; order = 1; title = 'Taking a turn'; explanation = 'Move your token forward one space. If the destination contains another token, move to the next empty space instead.' }
+    )
+} | ConvertTo-Json -Depth 8
+Invoke-RestMethod -Method Post -Uri "$base/game-versions/$($version.id)/teaching-flows" `
+    -ContentType 'application/json' -Body $flow
+```
+
+Create a **new** session for this demo game, then Continue at PREPARE to enter setup. The same
+engine executes these two steps and returns to PREPARE. A second Continue moves to TURN; the
+next finishes teaching. Existing sessions keep their earlier flows and progress. This demonstrates
+generic setup without changing shared code or requiring paid Q&A.
+
+GET the setup-flows publication URL to inspect its latest configuration. Publications are immutable,
+version-bound, and contain 1–100 uniquely keyed/ordered steps; title/instruction are required,
+notes/warnings optional. Teaching flows allow at most one setup trigger, applicable to all three
+depths so QUICK cannot skip required setup. Missing setup configuration for a trigger returns 409.
+New sessions pin the current setup flow when configured. Legacy sessions without a pin may choose
+that version's latest flow on their first explicit start; afterward the pin is fixed. Later publications
+or catalog default changes never alter a pinned setup. Legacy teaching flows without triggers retain
+their existing behavior and can enter PLAYING without a recorded setup confirmation.
 
 ## Development Roadmap
 
@@ -797,7 +887,7 @@ remains deferred; no voice, browser UI or SetupFlow endpoints are added.
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 Phase 1 = Milestones 1–4 after bootstrap; Phase 2 = Milestone 5; Phase 3 = Milestone 6;
-Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 7 is unstarted.
+Phase 4 = Milestone 7; Phase 5 = Milestone 8. Milestone 8 is unstarted.
 
 ## Adding a game
 

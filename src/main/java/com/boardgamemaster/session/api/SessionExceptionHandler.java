@@ -10,12 +10,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {SessionController.class, TeachingController.class})
+@RestControllerAdvice(assignableTypes = {SessionController.class, TeachingController.class, com.boardgamemaster.setup.api.SetupController.class, com.boardgamemaster.setup.api.SetupFlowController.class})
 public class SessionExceptionHandler {
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     ResponseEntity<ApiError> conflict(HttpServletRequest request) {
         return ResponseEntity.status(409).body(new ApiError("SESSION_CONFLICT", "Session data conflicts with stored configuration",
                 Instant.now(), request.getRequestURI()));
+    }
+    @ExceptionHandler(com.boardgamemaster.setup.domain.SetupException.class)
+    ResponseEntity<ApiError> setup(com.boardgamemaster.setup.domain.SetupException e, HttpServletRequest request) {
+        int status = e.code() == com.boardgamemaster.setup.domain.SetupException.Code.INVALID_SETUP_FLOW ? 400 : 409;
+        return ResponseEntity.status(status).body(new ApiError(e.code().name(), e.getMessage(), Instant.now(), request.getRequestURI()));
     }
     @ExceptionHandler(SessionException.class)
     ResponseEntity<ApiError> session(SessionException e, HttpServletRequest request) {

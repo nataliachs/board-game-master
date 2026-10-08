@@ -1,2 +1,2 @@
-/** Reserved feature boundary; implementation belongs to a later milestone. */
+/** Version-bound authored setup and deterministic session progress. */
 package com.boardgamemaster.setup;
