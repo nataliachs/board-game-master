@@ -8,6 +8,35 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class SessionPromptTest {
+    @Test void naturalFollowUpsIncludeAuthoredTopicWithoutUsingPriorAssistantClaims() {
+        var context = new AnswerConversation(UUID.randomUUID(), "Original game", "Edition", "en", 3, "STANDARD", "SETUP",
+                "Prepare", "Choose your starting mission cards.",
+                List.of(new AnswerConversation.Turn("USER", "How many cards do we receive?"),
+                        new AnswerConversation.Turn("ASSISTANT", "Unsupported prior claim")),
+                new AnswerConversation.SetupContext("CARDS", "Choose cards", "Deal four mission cards. Keep at least two."));
+        for (String question : List.of("Can I just keep two?", "Is keeping 2 okay?", "Do I need all four?")) {
+            assertThat(context.retrievalQuery(question)).startsWith(question)
+                    .contains("Deal four mission cards. Keep at least two.", "Choose your starting mission cards.",
+                            "How many cards do we receive?").doesNotContain("Unsupported prior claim");
+        }
+        var lessonOnly = conversation(List.of());
+        assertThat(lessonOnly.retrievalQuery("Can I do that?")).contains("Original lesson");
+    }
+
+    @Test void longCueFieldsRemainBoundedWithoutDroppingOtherTopicsOrSplittingUnicode() {
+        var context = new AnswerConversation(UUID.randomUUID(), "Game", "Edition", "en", 3, "STANDARD", "SETUP",
+                "Lesson title", "l".repeat(799) + "😀" + "hidden lesson tail",
+                List.of(new AnswerConversation.Turn("USER", "Previous topic " + "p".repeat(4000))),
+                new AnswerConversation.SetupContext("CARDS", "Setup title", "s".repeat(799) + "😀" + "hidden setup tail"));
+        String query = context.retrievalQuery("Can I keep two?");
+        assertThat(query).hasSizeLessThanOrEqualTo(4000).contains("Previous topic", "Lesson title", "Lesson explanation:")
+                .doesNotContain("hidden setup tail", "hidden lesson tail", "😀");
+        for (int limit : List.of(32, 100, 850, 1200, 2400)) {
+            String bounded = context.retrievalQuery("Can I keep two?", limit);
+            assertThat(bounded).hasSizeLessThanOrEqualTo(limit).startsWith("Can I keep two?");
+            assertThat(Character.isHighSurrogate(bounded.charAt(bounded.length() - 1))).isFalse();
+        }
+    }
     private final ObjectMapper mapper = new ObjectMapper();
     private final UUID version = UUID.randomUUID();
     private RuleVectorStore.Match match() {

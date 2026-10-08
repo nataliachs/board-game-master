@@ -9,11 +9,14 @@ storage-port, PostgreSQL adapter and DTO HTTP operations.
 
 Milestone 6 adds `session.domain`, `session.application`, `session.infrastructure` and `session.api`.
 Milestone 7 adds the `setup` domain/application/infrastructure/api packages.
+Milestone 8 adds `ai` speech adapters, `voice` application/API packages and `ui` application/API
+adapters with Thymeleaf templates and static recording/presentation assets.
 `gamemaster` remains a reserved boundary.
 Add domain/application/infrastructure/api subpackages only as each milestone needs them.
 Milestone 4 adds provider-neutral LLM contracts, an opt-in HTTP adapter, a dedicated evidence
 prompt builder and stateless default-version question answering. Milestone 6 reuses this pipeline
-for pinned session rulesets and bounded conversational context. Guided setup is implemented in Milestone 7; speech remains deferred.
+for pinned session rulesets and bounded conversational context. Guided setup is implemented in
+Milestone 7; speech and the browser demo are implemented in Milestone 8.
 
 `Game` represents a logical game; `GameVersion` owns edition, version label, language,
 and default/active flags. UUID ownership is enforced by a database foreign key and scoped
@@ -106,7 +109,7 @@ the serialized context-character budget; an oversized next chunk ends context se
 
 The typed LLM result contains answer, evidence-sufficiency flag and citations. Application
 checks require every citation to identify a chunk actually supplied in the prompt, contain an
-exact nonblank source quote, be unique and meet the minimum answer evidence gate. Stored
+nonblank source quote matching exactly except for whitespace-run differences, be unique and meet the minimum answer evidence gate. Stored
 metadata supplies public source names, IDs, versions, section/page and chunk offsets. Invented
 or excluded sources/quotes fail closed. Provider refusal or insufficient evidence discards
 generated text. No usable evidence skips generation. All these paths return a fixed fallback,
@@ -171,6 +174,37 @@ MVC advice preserves HTTP status and framework headers; servlet dispatches use t
 Unexpected exception messages and stack traces are not sent to clients or logged.
 Each request gets a generated `X-Request-ID`, also placed in the logging MDC.
 Console logs use Spring Boot ECS JSON; database health details remain private.
+Rule answer diagnostics log retrieved chunk/document IDs, bounded single-line section titles, pages,
+similarity scores, the minimum answer-evidence score and whether each chunk survived the prompt budget.
+Every LOW fallback logs a stable reason (missing/weak evidence, prompt budget exclusion, model refusal,
+unknown/duplicate/weak citation, quote mismatch or no citations). Existing request-ID MDC correlates these
+events. Questions, rule bodies, generated answers/quotes, credentials and audio are not logged by these diagnostics.
+
+Quote mismatches in otherwise valid citations permit one regeneration with identical serialized input
+and trusted feedback containing only the rejected chunk ID. Stronger base instructions require contiguous
+exact quotes paired with their own excerpt IDs and context-appropriate rules. The entire replacement
+response passes the same validation/confidence gates; no content repair, weaker threshold or merging
+of old/new answers occurs. Unknown/duplicate/weak citations and model refusal do not retry. The second
+attempt cannot retry again. Provider failures propagate before session persistence; only the final
+answer/fallback is stored and existing revision guards still apply. Retrieval runs once; a correction can
+add one LLM request with its own configured timeout/cost. Logs distinguish attempts without content.
+
+A separate `com.boardgamemaster.rag.quotediagnostics` logger is OFF by default via
+`ANSWER_QUOTE_DIAGNOSTICS_LEVEL`. Temporary DEBUG enables local rejected-quote/cited-passage
+comparison with attempt and source IDs, plus other prompt chunk IDs containing the exact quote.
+JSON escaping preserves whitespace for comparison without multi-line log injection. Passages are
+capped at 8000 UTF-16 characters with surrogate-safe truncation and explicit original length/truncation
+metadata; quotes retain the answer-contract 1000-character cap. No question/full answer is emitted.
+Only this explicit diagnostic can log quote/source text; ordinary INFO diagnostics remain metadata-only.
+Captures are private local debugging material, not repository fixtures or proof of semantic correctness.
+
+`SourceQuoteMatcher` permits whitespace-run differences (including line breaks, tabs and Unicode spaces)
+within a single supplied chunk. All non-whitespace characters remain literal and ordered; omitted text,
+ellipses, changed words/numbers/punctuation and wrong chunk IDs cannot pass. Accepted citations use the
+matched original contiguous source substring, preserving paragraph breaks. Generated and restored quotes
+are limited to 1000 UTF-16 characters. Whitespace-only matches avoid the correction call; source provenance
+still does not establish semantic entailment of the generated answer.
+The HIGH-confidence minimum-length gate uses restored source quotes rather than generated whitespace.
 
 Flyway owns schema changes; Hibernate uses `ddl-auto=validate` and open-in-view is disabled.
 V1 installs pgvector; V2 creates the catalog schema, V3 seeds reference metadata, V4 adds rules,
@@ -223,7 +257,9 @@ The service is the boundary for a future summarization policy; no summarizer is 
 Session expansion selection is not implemented; existing retrieval defaults exclude expansions.
 
 `AnswerConversation` is a provider-neutral context contract. Retrieval combines the complete
-current question with the current setup title (during SETUP), latest retained user question and lesson title, respecting both the
+current question with the current setup title/instruction (during SETUP), latest retained user question and lesson
+title/explanation. Titles are capped at 160 characters each, instructions/explanations at 800 each and the prior
+question at 400, with Unicode-safe truncation. The assembled query respects both the
 configured embedding character limit and the 4000-character question limit. This deterministic
 topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.
 `RuleAnswerService.askPinned` validates version ownership without resolving the mutable default.
@@ -256,7 +292,7 @@ HTTP session/flow/history operations, default/flow pinning, grounded follow-ups,
 isolation, provider failures, atomic exchange rollback, concurrent navigation/questions and V5
 upgrade preservation. They use isolated PostgreSQL/pgvector containers and provider doubles.
 The limited user-run live walkthrough supplements these automated results; broader quality evaluation
-remains deferred. Milestone 8 voice and browser UI are unstarted.
+remains deferred. Milestone 8 adds the voice and browser boundaries described below.
 
 ## Guided setup (Milestone 7)
 
@@ -300,3 +336,60 @@ Tests cover generic and Catan journeys, every depth, explicit/triggered start, b
 saved-lesson resume, version/flow pins, Q&A context and failures, stale concurrent requests,
 transaction rollback, database ownership and V6 upgrade preservation. They use isolated PostgreSQL
 and mocked AI providers. Live setup-specific provider/physical walkthroughs remain unverified.
+
+## Voice and browser demo (Milestone 8)
+
+`SpeechToTextClient` and `TextToSpeechClient` are provider-neutral boundaries with independently
+disabled defaults and opt-in OpenAI HTTP adapters. Keys and model settings stay server-side.
+STT sends a multipart audio file with a generated filename and receives bounded JSON text;
+TTS sends the verified answer text and receives bounded MP3 bytes. Fixed HTTPS production
+endpoints do not follow redirects. Safe application errors hide provider response bodies and
+credentials. Timeouts are bounded and there are no automatic retries or queues.
+
+`VoiceService` validates MIME/container signatures and byte limits, checks the active session,
+captures its revision, transcribes outside a transaction and invokes the existing `SessionService.ask`.
+The expected revision is checked before RAG and again by the existing atomic exchange write.
+Navigation during transcription therefore cannot silently attach an answer to a changed lesson
+or setup step. Questions retain the pinned ruleset, conversation budget and citation validation.
+STT, embeddings, generation and TTS never span a database transaction.
+
+Answer failure preserves recognized text in the response without a partial conversation. Synthesis
+runs only after the normal text exchange is saved; failure returns the saved text/citations and a
+structured audio error. Successful audio is base64 MP3 metadata in the response, played through
+a browser Blob URL. Neither uploaded nor generated audio is persisted; V1–V7 remain unchanged
+and no new migration is required. Audio signatures are checked without full codec decoding;
+server byte limits do not establish duration or transcription quality.
+
+`DemoUiController` is a separate HTML adapter to the existing catalog/session/setup services.
+`DemoUiService` builds DTO/read models under a repeatable-read snapshot for pinned content,
+workflow state and bounded history. Forms use redirect-after-post and backend revision checks.
+Thymeleaf escapes dynamic text; rule source references remain plain text rather than arbitrary
+links. Review reads reached lessons/steps without mutation. STANDARD is the initial depth.
+The same session moves through TEACHING, SETUP, resumed TEACHING, PLAYING and COMPLETED.
+
+The browser script handles only push-to-talk, upload, playback and presentation. It requests the
+microphone on user action, stops tracks on release/cancellation, bounds recordings and displays
+transcription, errors and audio. Updated revisions and history come from the backend. Navigation,
+rules, retrieval and provider calls remain server-side. The pages use same-origin resources, a
+content security policy, no-store headers, cookie-only session tracking and a cross-site form-write
+guard. These are local-demo protections, not production authentication or authorization.
+
+Tests exercise multipart provider contracts using local HTTP fixtures, orchestration failures and
+race handling, HTML flows/history/citations/escaping and disabled-provider teaching. A headless
+desktop/mobile browser walkthrough uses a synthetic microphone and fake providers. Real speech
+recognition, audio intelligibility and broader live RAG quality remain unverified; the earlier
+user-run live OpenAI walkthrough and its limitations are preserved in DEVELOPMENT_STATUS.md.
+
+`NarrationService` extends Milestone 8 with spoken authored guidance, independent of STT and RAG.
+A repeatable-read snapshot selects the pinned current lesson (including the shared Explain again
+presentation) or setup instruction/notes/warnings. A request supplies only revision, presentation
+variant and segment index, never arbitrary text. Long content is split into bounded TTS segments;
+one segment is synthesized per request outside the transaction, with revision checks before and
+after. Narration does not update progress, revisions or conversation history.
+
+The UI offers spoken guidance on the start screen and in active teaching/setup pages. A tab-local
+preference enables automatic narration of new content after navigation. Same-content refreshes,
+question replies and review returns are suppressed; explicit Repeat/Explain again can replay.
+The playback script fetches later segments only as earlier ones finish, supports pause/stop/replay,
+reuses current-page audio, aborts pending fetches on navigation and coordinates with question audio
+and microphone capture. All spoken content selection and segmentation remain in backend services.

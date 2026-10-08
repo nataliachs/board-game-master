@@ -16,12 +16,19 @@ public record AnswerConversation(UUID sessionId, String game, String edition, St
         return retrievalQuery(question, 4000);
     }
     public String retrievalQuery(String question, int limit) {
-        // Preserve the complete current question; remaining space supplies recent topic and lesson cues.
+        // Preserve the question. Bound each cue so a long instruction cannot crowd out all other topics.
         String previous = recentMessages.reversed().stream().filter(m -> m.role().equals("USER")).map(Turn::content).findFirst().orElse("");
-        String cues = (setup == null ? "" : "\nCurrent setup step: " + setup.title()) + "\nPrevious question: " + previous + "\nCurrent lesson: " + lessonTitle;
+        String cues = (setup == null ? "" : "\nCurrent setup step: " + prefix(setup.title(), 160)
+                + "\nSetup instruction: " + prefix(setup.instruction(), 800))
+                + "\nPrevious question: " + prefix(previous, 400)
+                + "\nCurrent lesson: " + prefix(lessonTitle, 160)
+                + "\nLesson explanation: " + prefix(lessonExplanation, 800);
         int available = Math.max(0, limit - question.length());
-        int end = Math.min(available, cues.length());
-        if (end > 0 && end < cues.length() && Character.isHighSurrogate(cues.charAt(end - 1))) { end--; }
-        return question + cues.substring(0, end);
+        return question + prefix(cues, available);
+    }
+    private static String prefix(String value, int limit) {
+        int end = Math.min(limit, value.length());
+        if (end > 0 && end < value.length() && Character.isHighSurrogate(value.charAt(end - 1))) { end--; }
+        return value.substring(0, end);
     }
 }

@@ -36,6 +36,7 @@ import static org.mockito.Mockito.*;
 @Testcontainers
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+    "boardgame.stt.provider=openai", "boardgame.stt.api-key=fixture-key", "boardgame.tts.provider=openai", "boardgame.tts.api-key=fixture-key",
     "boardgame.embedding.dimensions=3", "boardgame.session.recent-message-limit=4", "boardgame.session.context-characters=1000"})
 class SessionIntegrationTest {
     @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
@@ -46,6 +47,10 @@ class SessionIntegrationTest {
     }
     @MockitoBean EmbeddingClient embeddings;
     @MockitoBean LlmClient llm;
+    @MockitoBean SpeechToTextClient stt;
+    @MockitoBean TextToSpeechClient tts;
+    @Autowired com.boardgamemaster.voice.application.VoiceService voice;
+    @Autowired com.boardgamemaster.voice.application.NarrationService narration;
     @Autowired GameService games;
     @Autowired TeachingService teaching;
     @Autowired SetupService setups;
@@ -61,6 +66,8 @@ class SessionIntegrationTest {
     private record Fixture(UUID game, UUID version, TeachingFlow flow) { }
 
     @BeforeEach void providers() {
+        when(stt.transcribe(any())).thenReturn("How do I collect a resource?");
+        when(tts.synthesize(anyString())).thenReturn(new SpeechAudio("ID3 original test audio".getBytes(StandardCharsets.US_ASCII), "audio/mpeg"));
         when(embeddings.profile()).thenReturn(new EmbeddingProfile("fixture", "session-vectors", 3));
         when(embeddings.embed(anyString())).thenReturn(new Embedding(List.of(1f, 0f, 0f)));
         doAnswer(call -> {
@@ -408,6 +415,86 @@ class SessionIntegrationTest {
         json(request("POST", path(id) + "/setup/restart", Map.of("expectedRevision", 10)), 409);
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
+    @Test void naturalSetupFollowUpsRetrieveCitableRulesWithoutChangingProgress() {
+        var f = fixture(false);
+        String rule = "Deal four mission cards. Keep at least two.";
+        index(f.version(), rule);
+        setups.publish(f.version(), "Original mission setup", List.of(
+                new SetupStep("CARDS", 0, "Choose cards", rule, List.of(), List.of())));
+        UUID id = sessions.create(f.game(), 3, null).session().id();
+        setups.act(id, SetupService.Action.START, 0);
+        var before = setups.current(id).session();
+        // Deterministic retrieval fixture: only a query carrying the instruction finds this rule.
+        // This verifies plumbing through real pgvector, not live embedding-model quality.
+        when(embeddings.embed(anyString())).thenAnswer(call -> new Embedding(
+                ((String) call.getArgument(0)).contains("Setup instruction: " + rule)
+                        ? List.of(1f, 0f, 0f) : List.of(0f, 1f, 0f)));
+        for (String question : List.of("Can I just keep two?", "Is keeping 2 okay?", "Do I need all four?")) {
+            var result = sessions.ask(id, question);
+            assertThat(result.answer().confidence()).isNotEqualTo(RuleAnswer.Confidence.LOW);
+            assertThat(result.answer().sources()).hasSize(1);
+            assertThat(result.answer().sources().getFirst().quote()).isEqualTo(rule);
+            var after = setups.current(id).session();
+            assertThat(after.setup()).isEqualTo(before.setup());
+            assertThat(after.currentSectionKey()).isEqualTo(before.currentSectionKey());
+            assertThat(after.stage()).isEqualTo(SessionStage.SETUP);
+        }
+        assertThat(sessions.history(id, null, 100)).hasSize(6);
+        verify(llm, times(3)).generate(any());
+    }
+
+    @Test void whitespaceNormalizedCitationsPersistOriginalSourceWithoutRetryOrSetupMovement() {
+        var f = guided(false);
+        index(f.version(), "## Original mission rules\n\nDeal four mission cards.\n\nKeep at least two.");
+        UUID id = sessions.create(f.game(), 3, null).session().id();
+        setups.act(id, SetupService.Action.START, 0);
+        var before = setups.current(id).session();
+        doAnswer(call -> {
+            var input = mapper.readTree(((LlmRequest) call.getArgument(0)).input());
+            var excerpt = input.path("excerpts").get(0);
+            return new LlmResponse("Keep at least two.", true, List.of(new LlmResponse.Citation(
+                    UUID.fromString(excerpt.path("chunkId").asText()), excerpt.path("content").asText().replaceAll("\\s+", " "))));
+        }).when(llm).generate(any());
+        var result = sessions.ask(id, "Can I keep two?");
+        String canonical = result.answer().sources().getFirst().quote();
+        assertThat(canonical).contains("\n\n");
+        assertThat(sessions.history(id, null, 100)).hasSize(2);
+        assertThat(sessions.history(id, null, 100).getLast().answer().sources().getFirst().quote()).isEqualTo(canonical);
+        assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
+        assertThat(setups.current(id).session().revision()).isEqualTo(before.revision() + 1);
+        verify(llm).generate(any());
+    }
+
+    @Test void quoteCorrectionPersistsOnlyFinalExchangeAndFailureLeavesNoPartialHistory() {
+        var f = guided(true); UUID id = sessions.create(f.game(), 3, null).session().id();
+        setups.act(id, SetupService.Action.START, 0);
+        var before = setups.current(id).session();
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var input = mapper.readTree(((LlmRequest) call.getArgument(0)).input());
+            var excerpt = input.path("excerpts").get(0);
+            boolean first = calls.incrementAndGet() == 1;
+            return new LlmResponse(first ? "Rejected answer" : "Move one space to collect a resource.", true,
+                    List.of(new LlmResponse.Citation(UUID.fromString(excerpt.path("chunkId").asText()),
+                            first ? "Fabricated quote" : excerpt.path("content").asText())));
+        }).when(llm).generate(any());
+        var result = sessions.ask(id, "How do I move this?");
+        assertThat(result.answer().sources()).hasSize(1);
+        assertThat(sessions.history(id, null, 100)).hasSize(2).noneMatch(m -> m.content().contains("Rejected"));
+        assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
+        assertThat(setups.current(id).session().revision()).isEqualTo(before.revision() + 1);
+        var chunkId = result.answer().sources().getFirst().chunkId();
+        doReturn(new LlmResponse("Rejected answer", true,
+                List.of(new LlmResponse.Citation(chunkId, "Fabricated quote"))))
+                .doThrow(new LlmException(LlmException.Code.LLM_TIMEOUT, "Safe timeout")).when(llm).generate(any());
+        assertThatThrownBy(() -> sessions.ask(id, "What about now?")).isInstanceOf(LlmException.class);
+        assertThat(sessions.history(id, null, 100)).hasSize(2);
+        assertThat(setups.current(id).session().revision()).isEqualTo(before.revision() + 1);
+        assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
+        verify(llm, times(4)).generate(any());
+    }
+
     @Test void questionsDuringSetupKeepProgressUseStepContextAndPersistCitations() {
         var f = guided(true); UUID id = sessions.create(f.game(), 3, null).session().id();
         setups.act(id, SetupService.Action.START, 0);
@@ -579,5 +666,214 @@ class SessionIntegrationTest {
                     .isInstanceOf(org.springframework.dao.DataAccessException.class);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM setup_flows WHERE game_version_id=?", Integer.class, f.version())).isZero();
         } finally { jdbc.execute("DROP TRIGGER setup_test_failure ON setup_steps"); jdbc.execute("DROP FUNCTION setup_test_failure()"); }
+    }
+
+    private byte[] wav() { return "RIFF1234WAVE original audio fixture".getBytes(StandardCharsets.US_ASCII); }
+    private HttpResponse<String> voiceRequest(UUID id, byte[] audio, String mediaType) throws Exception {
+        String boundary = "fixture-boundary";
+        var header = ("--"+boundary+"\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"ignored.wav\"\r\nContent-Type: "+mediaType+"\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+        var tail = ("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8);
+        try(var client=HttpClient.newHttpClient()) {
+            return client.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+path(id)+"/voice"))
+                    .header("Content-Type","multipart/form-data; boundary="+boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArrays(List.of(header,audio,tail))).build(),HttpResponse.BodyHandlers.ofString());
+        }
+    }
+    private HttpResponse<String> form(HttpClient browser, String path, Map<String, String> fields) throws Exception {
+        String body=fields.entrySet().stream().map(e->java.net.URLEncoder.encode(e.getKey(),StandardCharsets.UTF_8)+"="+java.net.URLEncoder.encode(e.getValue(),StandardCharsets.UTF_8)).collect(java.util.stream.Collectors.joining("&"));
+        return browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).header("Content-Type","application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private HttpResponse<String> html(HttpClient browser, String path) throws Exception {
+        return browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).GET().build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private void redirect(HttpResponse<String> response, String target) {
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(302);
+        assertThat(response.headers().firstValue("Location")).hasValue("http://localhost:"+port+target);
+    }
+    @Test void voiceHttpUsesExistingGroundedSessionPipelineAndReturnsPlayableAudio() throws Exception {
+        var f=guided(true);UUID id=sessions.create(f.game(),3,null).session().id();setups.act(id,SetupService.Action.START,0);
+        var before=setups.current(id).session().setup();
+        var result=json(voiceRequest(id,wav(),"audio/wav"),200);
+        assertThat(result.path("transcription").asText()).isEqualTo("How do I collect a resource?");
+        assertThat(result.path("message").path("answer").path("sources").size()).isEqualTo(1);
+        assertThat(result.path("audio").path("mediaType").asText()).isEqualTo("audio/mpeg");
+        assertThat(Base64.getDecoder().decode(result.path("audio").path("base64").asText())).startsWith((byte)'I',(byte)'D',(byte)'3');
+        assertThat(setups.current(id).session().setup()).isEqualTo(before);
+        assertThat(sessions.current(id).session().stage()).isEqualTo(SessionStage.SETUP);
+        assertThat(sessions.history(id,null,100)).hasSize(2);
+        verify(tts).synthesize(sessions.history(id,null,100).getLast().content());
+    }
+    @Test void synthesisFailureReturnsSavedTextAndCitationsWithoutLosingHistory() throws Exception {
+        var f=fixture(true);UUID id=sessions.create(f.game(),3,null).session().id();
+        when(tts.synthesize(anyString())).thenThrow(new SpeechException(SpeechException.Code.TTS_TIMEOUT,"Speech request timed out"));
+        var result=json(voiceRequest(id,wav(),"audio/wav"),200);
+        assertThat(result.path("audio").isNull()).isTrue();assertThat(result.path("audioError").path("code").asText()).isEqualTo("TTS_TIMEOUT");
+        assertThat(result.path("message").path("answer").path("sources").size()).isEqualTo(1);
+        assertThat(sessions.history(id,null,100)).hasSize(2);assertThat(sessions.current(id).session().revision()).isEqualTo(1);
+    }
+    @Test void voiceKeepsTranscriptionWhenRuleProviderFailsAndAllowsTextAfterward() throws Exception {
+        var f=fixture(true);UUID id=sessions.create(f.game(),3,null).session().id();
+        doThrow(new LlmException(LlmException.Code.LLM_TIMEOUT,"LLM request timed out")).when(llm).generate(any());
+        var result=json(voiceRequest(id,wav(),"audio/wav"),504);
+        assertThat(result.path("transcription").asText()).contains("resource");assertThat(result.path("answerError").path("code").asText()).isEqualTo("LLM_TIMEOUT");
+        assertThat(sessions.history(id,null,100)).isEmpty();verifyNoInteractions(tts);
+        doReturn(new LlmResponse("",false,List.of())).when(llm).generate(any());
+        assertThat(sessions.ask(id,"What about moving?").revision()).isEqualTo(1);
+    }
+    @Test void invalidEmptyOversizedOrCompletedVoiceCannotReachProviders() throws Exception {
+        var f=fixture(false);UUID id=sessions.create(f.game(),3,null).session().id();
+        assertThat(json(voiceRequest(id,"not audio".getBytes(StandardCharsets.UTF_8),"audio/wav"),400).path("code").asText()).isEqualTo("INVALID_AUDIO");
+        json(voiceRequest(id,wav(),"text/plain"),400);json(voiceRequest(id,new byte[2097153],"audio/wav"),413);
+        sessions.complete(id,0);json(voiceRequest(id,wav(),"audio/wav"),409);json(voiceRequest(UUID.randomUUID(),wav(),"audio/wav"),404);
+        verifyNoInteractions(stt,tts,llm);
+    }
+    @Test void transcriptionFailureAndSilenceLeaveStateAndHistoryUnchanged() throws Exception {
+        var f=fixture(false);UUID id=sessions.create(f.game(),3,null).session().id();
+        when(stt.transcribe(any())).thenThrow(new SpeechException(SpeechException.Code.STT_TIMEOUT,"Speech request timed out"));
+        json(voiceRequest(id,wav(),"audio/wav"),504);
+        doReturn(" ").when(stt).transcribe(any());
+        assertThat(json(voiceRequest(id,wav(),"audio/wav"),400).path("code").asText()).isEqualTo("EMPTY_TRANSCRIPTION");
+        assertThat(sessions.current(id).session().revision()).isZero();assertThat(sessions.history(id,null,100)).isEmpty();verifyNoInteractions(tts,llm);
+    }
+    @Test void setupChangeDuringTranscriptionDiscardsStaleVoiceBeforeRag() {
+        var f=guided(false);UUID id=sessions.create(f.game(),3,null).session().id();setups.act(id,SetupService.Action.START,0);
+        when(stt.transcribe(any())).thenAnswer(call->{setups.act(id,SetupService.Action.NEXT,1);return "What do I do?";});
+        var result=voice.ask(id,wav(),"audio/wav");assertThat(result.answerError().code()).isEqualTo("SESSION_CONFLICT");
+        assertThat(result.transcription()).isEqualTo("What do I do?");assertThat(sessions.history(id,null,100)).isEmpty();verifyNoInteractions(llm,tts);
+    }
+    @Test void speechCallsNeverHoldDatabaseTransactionAndLowFallbackIsSpoken() {
+        var f=fixture(false);UUID id=sessions.create(f.game(),3,null).session().id();
+        when(stt.transcribe(any())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();return "Can I fly?";});
+        when(tts.synthesize(anyString())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();return new SpeechAudio("ID3 original audio".getBytes(StandardCharsets.US_ASCII),"audio/mpeg");});
+        assertThat(voice.ask(id,wav(),"audio/wav").message().answer().confidence()).isEqualTo(RuleAnswer.Confidence.LOW);
+        assertThat(sessions.history(id,null,100)).hasSize(2);verifyNoInteractions(llm);
+    }
+    @Test void narrationSpeaksPinnedLessonAndExplainAgainWithoutMutatingProgress() throws Exception {
+        var f=fixture(false); UUID id=sessions.create(f.game(),3,null).session().id();
+        var before=sessions.current(id).session();
+        when(tts.synthesize(anyString())).thenAnswer(call->{
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return new SpeechAudio("ID3 authored narration fixture".getBytes(StandardCharsets.US_ASCII),"audio/mpeg");
+        });
+        var result=json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",0)),200);
+        assertThat(result.path("text").asText()).contains("START lesson","An original teaching explanation.");
+        assertThat(result.path("audio").path("mediaType").asText()).isEqualTo("audio/mpeg");
+        assertThat(result.path("totalSegments").asInt()).isEqualTo(1);
+        var expanded=narration.speak(id,0,true,0);
+        assertThat(expanded.text()).contains("Let's take this one step at a time.","A simple original example.","Use the printed reference.");
+        assertThat(sessions.current(id).session()).isEqualTo(before);
+        assertThat(sessions.history(id,null,100)).isEmpty();
+        verifyNoInteractions(stt,llm,embeddings);
+    }
+    @Test void narrationIncludesCurrentSetupNotesAndWarningsWithoutAdvancing() throws Exception {
+        var f=guided(false); UUID id=sessions.create(f.game(),3,null).session().id();
+        setups.act(id,SetupService.Action.START,0); var before=sessions.current(id).session();
+        var result=narration.speak(id,1,false,0);
+        assertThat(result.stage()).isEqualTo(SessionStage.SETUP);
+        assertThat(result.text()).contains("FIRST setup","Confirm this yourself.");
+        assertThat(sessions.current(id).session()).isEqualTo(before);
+        assertThat(sessions.history(id,null,100)).isEmpty();
+        verifyNoInteractions(stt,llm,embeddings);
+    }
+    @Test void narrationFailureAndInvalidRequestsLeaveSessionReadableAndDoNotCallOtherProviders() throws Exception {
+        var f=fixture(false); UUID id=sessions.create(f.game(),3,null).session().id();
+        json(request("POST",path(id)+"/voice/narration",Map.of()),400);
+        json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",-1)),400);
+        json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",9)),409);
+        json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",0,"segmentIndex",9)),400);
+        verifyNoInteractions(tts);
+        when(tts.synthesize(anyString())).thenThrow(new SpeechException(SpeechException.Code.TTS_TIMEOUT,"Speech request timed out"));
+        json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",0)),504);
+        assertThat(sessions.current(id).session().revision()).isZero();
+        assertThat(sessions.history(id,null,100)).isEmpty();
+        sessions.complete(id,0);
+        json(request("POST",path(id)+"/voice/narration",Map.of("expectedRevision",1)),409);
+        json(request("POST",path(UUID.randomUUID())+"/voice/narration",Map.of("expectedRevision",0)),404);
+        verify(tts,times(1)).synthesize(anyString()); verifyNoInteractions(stt,llm,embeddings);
+    }
+    @Test void narrationDiscardsAudioWhenProgressChangesDuringSynthesis() {
+        var f=fixture(false); UUID id=sessions.create(f.game(),3,null).session().id();
+        when(tts.synthesize(anyString())).thenAnswer(call->{
+            sessions.navigate(id,GameSession.Action.CONTINUE,0);
+            return new SpeechAudio("ID3 stale narration fixture".getBytes(StandardCharsets.US_ASCII),"audio/mpeg");
+        });
+        assertThatThrownBy(()->narration.speak(id,0,false,0)).isInstanceOf(SessionException.class)
+                .extracting(e->((SessionException)e).code()).isEqualTo(SessionException.Code.SESSION_CONFLICT);
+        assertThat(sessions.current(id).session().currentSectionKey()).isEqualTo("END");
+        assertThat(sessions.history(id,null,100)).isEmpty();
+    }
+    @Test void longNarrationSynthesizesOnlyRequestedSegment() {
+        var f=fixture(false);
+        teaching.publish(f.version(),"Long guidance",List.of(new TeachingSection("LONG",0,"Long lesson","Original teaching sentence. ".repeat(280),null,null,null,null)));
+        UUID id=sessions.create(f.game(),3,null).session().id();
+        var first=narration.speak(id,0,false,0);
+        assertThat(first.totalSegments()).isGreaterThan(1); assertThat(first.text()).hasSizeLessThanOrEqualTo(4096);
+        verify(tts,times(1)).synthesize(first.text());
+        var second=narration.speak(id,0,false,1);
+        assertThat(second.segmentIndex()).isEqualTo(1); assertThat(second.text()).hasSizeLessThanOrEqualTo(4096);
+        assertThat(sessions.current(id).session().revision()).isZero();
+    }
+    @Test void browserLoadsGamesAndGenericJourneyPreservesReviewAndHistory() throws Exception {
+        var f=guided(true);
+        try(var browser=HttpClient.newBuilder().cookieHandler(new java.net.CookieManager(null,java.net.CookiePolicy.ACCEPT_ALL)).build()) {
+            var home=html(browser,"/");assertThat(home.statusCode()).isEqualTo(200);
+            assertThat(home.body()).contains(f.game().toString(),"STANDARD\" selected", "Original session game").doesNotContain("fixture-key");
+            var created=form(browser,"/ui/sessions",Map.of("gameId",f.game().toString(),"playerCount","3","teachingDepth","STANDARD"));
+            assertThat(created.statusCode()).isEqualTo(302);String location=created.headers().firstValue("Location").orElseThrow();
+            String url=URI.create(location).getPath();UUID id=UUID.fromString(url.substring(url.lastIndexOf('/')+1));
+            assertThat(html(browser,url).body()).contains("START lesson","Lesson 1 of 3","Hold to speak","Speak explanations","Listen / Replay","/voice/narration");
+            redirect(form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","0")),url);
+            redirect(form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","1")),url);
+            assertThat(html(browser,url).body()).contains("FIRST setup","Step 1 of 2","Confirm this yourself.");
+            var state=sessions.current(id).session();assertThat(html(browser,url+"/review").body()).contains("Prepare the table","FIRST setup");
+            assertThat(sessions.current(id).session()).isEqualTo(state);
+            redirect(form(browser,"/ui/sessions/"+id+"/messages",Map.of("question","How do I move?")),url);
+            assertThat(html(browser,url).body()).contains("View sources","Original session rules","FIRST setup").doesNotContain("INTERNAL_ERROR");
+            redirect(form(browser,"/ui/sessions/"+id+"/setup",Map.of("action","NEXT","expectedRevision","3")),url);
+            redirect(form(browser,"/ui/sessions/"+id+"/setup",Map.of("action","COMPLETE","expectedRevision","4")),url);
+            assertThat(html(browser,url).body()).contains("Prepare the table").doesNotContain("id=\"current-setup\"");
+            form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","5"));
+            form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","6"));
+            var playing=html(browser,url);assertThat(playing.body()).contains("You're ready to play.","Game in progress");
+            state=sessions.current(id).session();html(browser,url+"/review");assertThat(sessions.current(id).session()).isEqualTo(state);
+            form(browser,"/ui/sessions/"+id+"/complete",Map.of("expectedRevision","7"));
+            assertThat(html(browser,url).body()).contains("Session completed","Original session rules").doesNotContain("id=\"question\"");
+        }
+    }
+    @Test void browserErrorsAreFriendlyAndRetryDoesNotDuplicateAdvancement() throws Exception {
+        var f=fixture(false);UUID id=sessions.create(f.game(),3,null).session().id();
+        try(var browser=HttpClient.newBuilder().cookieHandler(new java.net.CookieManager(null,java.net.CookiePolicy.ACCEPT_ALL)).build()) {
+            form(browser,"/ui/sessions",Map.of("gameId",f.game().toString(),"playerCount","9"));
+            assertThat(html(browser,"/").body()).contains("alert error");
+            form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","0"));
+            form(browser,"/ui/sessions/"+id+"/teaching",Map.of("action","CONTINUE","expectedRevision","0"));
+            assertThat(html(browser,"/sessions/"+id).body()).contains("reload");assertThat(sessions.current(id).session().revision()).isEqualTo(1);
+            var missing=html(browser,"/sessions/"+UUID.randomUUID());assertThat(missing.statusCode()).isEqualTo(404);assertThat(missing.body()).contains("Session was not found","Return to game selection").doesNotContain("stacktrace");
+            assertThat(html(browser,"/sessions/not-a-uuid").statusCode()).isEqualTo(400);
+        }
+    }
+    @Test void browserEscapesUntrustedLessonsAndSourcesAndServesPolicyAndStaticAssets() throws Exception {
+        var f=fixture(false);
+        teaching.publish(f.version(),"Unsafe text fixture",List.of(new TeachingSection("FIRST",0,"<script>bad()</script>","<img src=x onerror=bad()>",null,null,null,null)));
+        UUID id=sessions.create(f.game(),3,null).session().id();
+        try(var browser=HttpClient.newHttpClient()) {
+            var response=html(browser,"/sessions/"+id);assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.body()).contains("&lt;script&gt;bad()&lt;/script&gt;").doesNotContain("<script>bad()</script>");
+            assertThat(response.headers().firstValue("Cache-Control")).hasValue("no-store");assertThat(response.headers().firstValue("Content-Security-Policy")).isPresent();
+            assertThat(html(browser,"/css/demo.css").statusCode()).isEqualTo(200);assertThat(html(browser,"/js/voice.js").body()).contains("getUserMedia","stopTracks");
+            var cross=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/ui/sessions/"+id+"/complete")).header("Sec-Fetch-Site","cross-site").POST(HttpRequest.BodyPublishers.ofString("expectedRevision=0")).build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(cross.statusCode()).isEqualTo(403);assertThat(sessions.current(id).session().revision()).isZero();
+        }
+    }
+    @Test void browserHistoryFragmentShowsCitationsAndReviewCannotRepinRuleset() throws Exception {
+        var f=fixture(true);UUID id=sessions.create(f.game(),3,null).session().id();sessions.ask(id,"How do I move?");
+        games.createVersion(f.game(),"New default","base","en",null,true,true);
+        try(var browser=HttpClient.newHttpClient()) {
+            var fragment=html(browser,"/sessions/"+id+"/conversation");assertThat(fragment.statusCode()).isEqualTo(200);
+            assertThat(fragment.body()).contains("id=\"conversation\"","View sources","Move one space to collect a resource.");
+            assertThat(html(browser,"/sessions/"+id+"/review").body()).contains("An original teaching explanation.");
+        }
+        assertThat(sessions.current(id).session().gameVersionId()).isEqualTo(f.version());assertThat(sessions.current(id).session().revision()).isEqualTo(1);
     }
 }

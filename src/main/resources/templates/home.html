@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Board Game Master · Choose a game</title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script></head>
+<body><header th:replace="~{fragments :: header}"></header><main class="home-layout">
+  <section class="intro"><p class="eyebrow">A place at the table</p><h1>Your next game<br>starts here.</h1><p class="lead">Learn one lesson at a time, prepare your table, and keep a Game Master nearby for the questions along the way.</p><div class="journey"><span>Learn</span><span>Set up</span><span>Play</span></div></section>
+  <section class="card start-card"><h2>Choose your game</h2><div th:replace="~{fragments :: alerts}"></div>
+    <p th:if="${#lists.isEmpty(games)}" class="muted">No active games on this page. Try another page or register a supported game through the catalog API.</p>
+    <form th:if="${!#lists.isEmpty(games)}" action="/ui/sessions" method="post">
+      <label for="game">Game</label><select id="game" name="gameId" required><option th:each="game : ${games}" th:value="${game.id}" th:text="${game.name}"></option></select>
+      <label for="players">Players</label><input id="players" name="playerCount" type="number" min="1" max="100" value="4" required>
+      <label for="depth">Teaching style</label><select id="depth" name="teachingDepth"><option value="QUICK">Quick · the essentials</option><option value="STANDARD" selected>Standard · a comfortable pace</option><option value="DETAILED">Detailed · examples and extra guidance</option></select>
+      <label th:if="${voice.outputEnabled}" class="checkbox-label"><input id="spoken-guidance-choice" type="checkbox">Speak explanations <span class="muted small">Uses the configured AI voice.</span></label>
+      <button class="primary wide" type="submit">Start game <span aria-hidden="true">→</span></button>
+    </form>
+    <nav class="actions" aria-label="Game pages"><a th:if="${gamePage > 0}" th:href="@{/(page=${gamePage - 1})}">Previous games</a><a th:if="${hasNext}" th:href="@{/(page=${gamePage + 1})}">More games</a></nav>
+    <p class="muted small">Lessons and setup work without AI keys. Rule questions need indexed sources and configured providers.</p>
+  </section>
+</main><footer>Made for curious players. Keep your physical rules nearby.</footer></body></html>

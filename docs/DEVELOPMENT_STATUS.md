@@ -34,15 +34,15 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-Milestones 0–7 are complete and validated with provider doubles. Sessions, progressive teaching,
-bounded conversational Q&A and guided setup with teaching resume are implemented. Voice and
-browser UI remain planned for Milestone 8.
+Milestones 0–8 are implemented and validated with provider doubles. Sessions, progressive teaching,
+bounded conversational Q&A, guided setup with teaching resume, optional speech and the thin
+browser demo are implemented. Live speech quality and broader RAG evaluation remain unverified.
 
 ## Current Milestone
 
-**Milestone 7 — Guided Setup Integrated with Teaching (complete and validated with provider doubles)**
+**Milestone 8 — Voice + Minimal Demo UI (implemented; automated validation complete)**
 
-Milestone 8 remains unstarted. The user completed a limited live OpenAI Lantern Trail walkthrough
+Milestone 8 adds optional voice and the browser demo using existing backend services. The user completed a limited live OpenAI Lantern Trail walkthrough
 on 2026-10-08, exercising Milestones 3, 4 and 6. Broader live-model quality evaluation remains
 deferred; the original automated validation history below is preserved.
 
@@ -56,7 +56,7 @@ deferred; the original automated validation history below is preserved.
 - [x] Milestone 5 — Production-Quality RAG
 - [x] Milestone 6 — Game Sessions + Teaching Flow
 - [x] Milestone 7 — Guided Setup Integrated with Teaching
-- [ ] Milestone 8 — Voice + Minimal Demo UI
+- [x] Milestone 8 — Voice + Minimal Demo UI
 
 ## Milestone 0 — Project Bootstrap
 
@@ -215,7 +215,7 @@ Implemented:
 
 ## Milestone 8 — Voice + Minimal Demo UI
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Implemented and validated with provider doubles and a synthetic-microphone browser walkthrough. Live speech quality remains unverified.
 
 Expected:
 
@@ -255,8 +255,54 @@ The application should be demonstrable without Swagger or Postman.
 
 ## Current work
 
-Milestone 7 is implemented on `milestone-7-guided-setup`; changes remain unstaged and uncommitted.
-No commit, push or branch change was performed. Milestone 8 is unstarted.
+Milestone 8 is implemented on the existing `milestone-8-voice-demo-ui` branch. Work remains
+unstaged and uncommitted. No paid API calls, commit, push or branch change were performed.
+The user's private `.env` and existing Compose database were not read or changed.
+
+- Optional independently configured STT/TTS interfaces and OpenAI HTTP adapters default to disabled. Multipart/JSON provider contracts, bounded responses, timeouts, safe failures and empty transcription are covered by fixture tests.
+- The multipart session voice endpoint validates type/signature/size, preserves recognized text if answering fails and invokes the existing version-pinned question pipeline. Revision guards reject navigation races. TTS failure preserves the stored text/citations and returns a structured audio error; raw and generated audio are not persisted.
+- A thin Thymeleaf browser demo loads catalog games, defaults to STANDARD, supports player count, progressive lesson/setup controls, same-session PLAYING, text questions, citations, bounded history, read-only review and completion. No frontend workflow or RAG engine was added.
+- Push-to-talk requests the microphone on user action, stops tracks on release/cancellation and provides a file-upload alternative. The UI displays transcription, playable MP3 metadata/controls and understandable errors, with independently usable text. Spoken answers are disclosed as AI-generated.
+- User-requested spoken teaching/setup guidance also reuses the TTS adapter. Start-screen/session controls enable narration of the first and subsequent lessons/steps, with pause/stop/replay. The backend selects authored pinned content and segments long explanations without changing progress/history; frontend preferences suppress duplicate automatic narration after refresh/questions/review. STT and RAG are not required for authored narration.
+- README, architecture, OpenAPI description and `.env.example` now describe implemented Milestone 8 behavior and manual demonstrations. Private keys remain server-side. No new database migration or changes to V1–V7 were needed.
+- Automated checks and browser evidence are recorded under Milestone 8 validation below. The original user-run live OpenAI walkthrough is preserved verbatim, including its remaining evaluation limitations. No future work was implemented.
+
+### Follow-up: natural clarification retrieval
+
+- User-run Ticket to Ride USA testing found that "Is that okay if I just keep 2 tickets?" returned LOW, while an explicit initial-setup question returned a supported MEDIUM answer. This suggests a contextual retrieval limitation; the precise original fallback branch was not captured.
+- Retrieval now includes bounded active setup instructions and lesson explanations alongside titles and the latest user question. The original question remains intact; Unicode-safe per-field and overall budgets apply. No extra model call, threshold reduction or change to evidence/citation validation was introduced.
+- Regression tests cover natural wording, teaching-only context, long/Unicode cues and a provider-double pgvector session journey with preserved setup progress and citations. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed: 220 unit tests and 105 isolated integration tests (325 total; zero failures, errors or skips), plus executable JAR assembly. `git diff --check` passed. No paid API calls, commit or push were performed.
+- Live OpenAI retesting of this change remains pending. Deterministic fixtures establish context delivery and workflow behavior, not real embedding relevance or improved answer accuracy. Previously recorded live results and broader evaluation limitations remain unchanged.
+
+### Follow-up: answer rejection diagnostics
+
+- The user's subsequent live Ticket to Ride test still returned LOW at "Choose your starting tickets". Shared logs show 16 candidates, 13 below threshold, three returned matches and an LLM call; they do not identify the selected passages or precise fallback branch. The natural-follow-up issue remains unresolved, and no model-quality improvement is claimed.
+- Added INFO diagnostics identifying retrieved chunk/document IDs, bounded single-line section titles, pages, similarity, prompt inclusion and the minimum answer evidence score. Each fallback now identifies its rejection reason and offending citation ID when applicable. No questions, rule bodies, generated answers/quotes, credentials or audio are logged by the new diagnostics. No models, thresholds, response contracts or evidence gates changed.
+- Tests exercise rejection reasons, prompt-budget exclusion and metadata-only logging, including sanitized/truncated titles. On 2026-10-08, `gradlew.bat test bootJar --no-daemon --console=plain` passed all 222 unit tests (zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. The 105 integration tests passed in the preceding context-improvement check and were not rerun for this diagnostics-only change. No paid API calls, commit or push were performed; historical live walkthrough results and remaining evaluation limitations are preserved. The next user-run request must capture the new logs to determine the live failure cause.
+
+### Follow-up: bounded quotation correction
+
+- User-supplied live diagnostics on 2026-10-08 identified `QUOTE_MISMATCH` for the Draw Tickets chunk. The Setting up the Game passage was also retrieved (similarity 0.563942, included in prompt). This confirms the observed rejection was citation validation, not absence of the setup passage. The generated quote was not logged, so its precise textual error remains unknown.
+- Strengthened citation instructions: copy contiguous exact quotes from the matching excerpt, and distinguish active setup from later turns using session context. An otherwise valid answer with a quote mismatch now permits one correction call using unchanged serialized evidence/context and feedback containing the rejected chunk ID, never the rejected answer/quote. Full validation applies again; no third call, relaxed thresholds or automatic quote substitution.
+- Added provider-double tests for successful correction, repeated mismatch and other rejected corrections, no retry for non-quote failures, provider-error propagation, unchanged evidence budget, and a PostgreSQL session test for a single final persisted exchange with unchanged setup progress and no partial history on correction failure. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 230 unit tests and 106 isolated integration tests (336 total, zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. Live accuracy of this correction remains unverified; broader evaluation and previously recorded walkthrough results are preserved.
+- No paid API calls, commit, push, private environment access or user-database modifications were performed. Live correction can add one paid LLM request and its configured per-call timeout; retrieval/indexing are not repeated.
+
+### Follow-up: controlled local quotation comparison
+
+- User-supplied logs from 2026-10-08 show three separate requests: at 11:03 UTC a quote correction was accepted; at 11:04:12 a model-insufficient-evidence fallback occurred; at 11:04:49 a quote mismatch persisted through the second attempt. Setup evidence was included in all three. Questions were not logged, so exact mapping to the user's five-ticket question is unknown. One accepted correction does not establish general answer quality.
+- Added a dedicated quotation-comparison logger, OFF by default and enabled locally with `ANSWER_QUOTE_DIAGNOSTICS_LEVEL=DEBUG`. It captures the rejected quote and cited passage as escaped JSON, attempt/source IDs, original content length/truncation and other prompt chunk IDs containing the exact quote. Passage output is bounded at 8000 UTF-16 characters with Unicode-safe truncation. Existing INFO logs omit content. No question/full answer or credentials are added to these diagnostics.
+- README and `.env.example` explain temporary opt-in, restart, single reproduction and switching OFF again; captures contain rule text and should remain outside Git. The user's private environment was not accessed or changed. Tests use fictional text and cover disabled logging, exact escaped text, wrong-source identification and bounded Unicode output. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 233 unit tests and 106 isolated integration tests (339 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed.
+- Citation checks, prompt behavior, retry bounds, models and thresholds are unchanged. No paid API calls, commit, push or user-database modifications were performed. Precise mismatch text and supported-deduction quality still require user-run capture/evaluation; previous walkthrough records and broader limitations are preserved.
+
+### Follow-up: whitespace-tolerant source quote matching
+
+- User-supplied opt-in diagnostics for request `68440d48-811b-4691-bd82-8be945bd5ef3` established that attempt 1 inserted ellipses between omitted sentences, while attempt 2 preserved the cited Draw Tickets wording but flattened paragraph breaks to spaces. The latter was rejected solely by the strict substring check. These findings do not verify the unseen generated answer's setup-versus-gameplay interpretation.
+- Citation validation now tolerates whitespace-run differences only within the cited prompt chunk and returns the original contiguous source span. Non-whitespace text remains literal; ellipses, omitted/changed words, changed numbers/punctuation/case/order and wrong source IDs still fail. Generated and restored quotes remain bounded at 1000 UTF-16 characters. Whitespace-only matches avoid an extra correction call. The HIGH-confidence minimum-length gate uses restored source text so model-added spaces cannot inflate it. Models, thresholds, retry cap and workflow ownership are unchanged.
+- Regression tests use fictional rules to cover whitespace/Unicode, source restoration, omitted/altered text, literal regex characters, size limits and protection against model-added whitespace inflating HIGH confidence, plus session persistence of original source quotes without setup movement or a retry. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 247 unit tests and 107 isolated integration tests (354 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. No paid API calls, commit, push, private environment access or user-database changes were performed. Live retesting, supported-deduction quality and broader evaluation remain pending; previous results are preserved.
+
+### Earlier implementation record (Milestone 7)
+
+Milestone 7 was implemented on `milestone-7-guided-setup`; the following records its original scope and validation.
 
 - V7 adds immutable version-bound SetupFlow/SetupStep and persisted session setup progress, flow/step/return-lesson ownership constraints and setup-trigger configuration. V1–V6 migrations are unchanged.
 - New sessions pin the configured setup flow. Legacy sessions can pin that version's latest setup at first explicit start; later publications/default changes never repin started setup.
@@ -325,15 +371,15 @@ evaluation remains deferred and this implementation makes no general live-model 
 
 ## Major Architectural Decisions
 
-Teaching/session decisions are implemented in Milestone 6 and setup in Milestone 7. Voice and
-demo UI remain planned for Milestone 8.
+Teaching/session decisions are implemented in Milestone 6, setup in Milestone 7, and voice plus
+the thin browser demo in Milestone 8.
 - Setup progress is independent of conversation: one all-depth teaching trigger, a version-bound pinned setup flow, explicit per-step confirmation and a saved teaching return point. Completion returns to TEACHING before readiness; shared engines contain no Catan-specific assumptions.
 - Modular monolith, organized by feature.
 - Game identifies the logical board game; GameVersion identifies its edition/language/ruleset.
 - Customers normally select Game only; the backend resolves a default GameVersion and pins it to the session.
 - Catan is the first reference dataset; shared engines are game-independent.
 - Implement only the requested milestone; stop before the next.
-- Root package is `com.boardgamemaster`; game, rules, embedding/LLM AI, retrieval, sessions and teaching are implemented. Setup and gamemaster package placeholders remain reserved.
+- Root package is `com.boardgamemaster`; game, rules, AI, retrieval, sessions, teaching, setup, voice and UI feature packages are implemented. The gamemaster placeholder remains reserved.
 - Spring Boot 3.5.16, Gradle 8.14.4, springdoc 2.8.17, Java 21 toolchain; JUnit 5 and Boot-managed Testcontainers.
 - `test` runs without Docker; `integrationTest` requires it. `check` includes both and does not silently skip integration tests.
 - Local profile imports `.env`; production requires external database credentials and disables API documentation by default.
@@ -419,6 +465,25 @@ The Phase 5 UI is a lightweight demonstration/testing interface.
 It must remain thin and reuse backend application logic.
 
 ## Validation
+
+### Milestone 8
+
+Spoken-guidance follow-up on 2026-10-08: implemented at the user's request within Milestone 8.
+The original 316-test implementation record below is retained.
+
+- `gradlew.bat check bootJar --no-daemon --console=plain` — PASS: 322 tests (218 unit, 104 isolated PostgreSQL/HTTP integration), zero failures/errors/skips; executable JAR built. Both browser scripts passed JavaScript syntax checks.
+- New coverage verifies pinned authored lesson narration, shared Explain again text, setup instructions/notes/warnings, long-segment bounds and Unicode preservation, one synthesis call per requested segment, no database transaction during TTS, unchanged session/history, safe provider failures, invalid/stale requests and discarded audio after concurrent navigation.
+- Headless Edge/Playwright with a disposable database and fake providers passed first-lesson narration after start-screen opt-in, decoded synthetic silent MP3 playback, Stop/Replay and current-page audio reuse, unchanged session state, refresh/review suppression, Explain again, setup/Repeat narration, opt-out and mobile layout. No JavaScript page errors occurred. The browser fixture substitutes a locally constructed silent MP3 for fake provider audio; this verifies playback mechanics, not real TTS quality or human-like speech. The mobile screenshot was visually inspected.
+- No paid API calls, private `.env` reads, user database changes, staging, commits, pushes or branch changes. The temporary preview process/database were removed after validation. Prior live OpenAI observations are preserved verbatim; live narration/STT quality and the broader evaluation limitations remain unverified.
+
+Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- `gradlew.bat check bootJar --no-daemon --console=plain` PASS: all 316 tests (217 unit, 99 isolated PostgreSQL/HTTP integration), zero failures/errors/skips; executable JAR built. Provider requests use local HTTP fixtures or doubles; Testcontainers databases are separate from the user's Compose database.
+- Coverage includes audio MIME/signature/size checks, binary defensive copies, multipart STT and JSON/MP3 TTS contracts, disabled providers, redacted configuration/errors, response bounds, malformed/empty responses, timeouts/rate limits, existing cited session answers, TTS partial failure, preserved transcription on LLM failure, unchanged progress/history on rejected requests, completed/missing sessions and setup changes during transcription. Tests verify that speech calls do not hold database transactions.
+- Real HTTP/Thymeleaf tests cover backend-loaded games, STANDARD selection, provider-free teaching, generic teaching/setup/resume/playing/completion, read-only review, citations/history, escaping, stale form submissions, safe errors and page headers. Initial focused checks exposed a reserved Thymeleaf variable, test-fixture mistakes and URL session rewriting; these were corrected before the passing full suite.
+- Headless Edge via Playwright passed a desktop/mobile Lantern Trail journey with a synthetic microphone, fake STT/TTS/embedding/LLM providers and an isolated PostgreSQL container. Verified push-to-talk upload, displayed transcription, saved cited answer/history, audio Blob controls, unchanged active setup step, resumed teaching, PLAYING, non-mutating review and retained history after completion. No JavaScript page errors occurred. Desktop/mobile screenshots were visually inspected; browser checks required execution outside the sandbox.
+- Limitations: the synthesized MP3 in this browser fixture is header-only test data, so the check verifies audio transport/controls, not successful decoded playback or intelligible speech. Human microphone permission/device behavior, real STT accuracy and live TTS quality were not tested. No paid calls were made. Full-codec validation, server duration enforcement, production authentication and retention policies remain outside this local demo. The prior live OpenAI walkthrough and broader evaluation limitations below remain unchanged.
+- No staging, commit, push or branch change. V1–V7, existing private configuration and user database were preserved. The temporary preview process and its disposable Testcontainers database were removed after validation; ignored check scripts/logs/screenshots remain under `build/`.
 
 ### Milestone 7
 
@@ -557,7 +622,7 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining automated Milestone 7 acceptance blockers are known. Docker/WSL is working. Milestone 8 remains unstarted. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation remains deferred.
+- No remaining automated Milestone 8 acceptance blockers are known. Docker/WSL is working. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation and live STT/TTS quality remain deferred. Browser voice validation used a synthetic microphone and fixture audio rather than human speech or live synthesis.
 - Session/teaching/setup APIs are local-development functionality without authentication. Flows are append-only and existing sessions pin their original content. Reference Catan lessons are an original introductory overview, not a complete commercial rulebook; authored reading pointers are not verified generated-answer citations. Setup confirmations are recorded, but the application cannot verify the physical board. Setup-specific live provider/physical walkthroughs remain unverified.
 - Session context keeps a bounded window of whole messages; an oversized newest message can leave no retained history. Retrieval uses deterministic recent-user-topic/lesson/setup-title cues rather than model-driven rewriting. The prompt budget may further remove context to retain source evidence. Summarization, persisted expansion selection, retention/deletion policies and live follow-up quality remain unimplemented/unverified.
 - Session revisions reject duplicate actions and discard stale generated answers after concurrent changes with no partial exchange. Provider requests completed before a conflict may still incur charges; no automatic retry is performed.

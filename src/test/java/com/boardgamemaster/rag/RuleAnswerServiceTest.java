@@ -15,6 +15,10 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class RuleAnswerServiceTest {
+    private final ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
+            org.slf4j.LoggerFactory.getLogger(RuleAnswerService.class);
+    private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs =
+            new ch.qos.logback.core.read.ListAppender<>();
     private final GameService games = mock(GameService.class);
     private final RuleRetrievalService retrieval = mock(RuleRetrievalService.class);
     private final LlmClient llm = mock(LlmClient.class);
@@ -27,10 +31,17 @@ class RuleAnswerServiceTest {
     private final String question = "How far do I move?";
 
     @BeforeEach void setup() {
+        logs.start(); logger.addAppender(logs);
         var resolved = mock(GameVersion.class);
         version = UUID.randomUUID();
         when(resolved.getId()).thenReturn(version);
         when(games.resolveDefaultVersion(game, null)).thenReturn(resolved);
+    }
+    @AfterEach void stopLogs() { logger.detachAppender(logs); logs.stop(); }
+    private void assertReason(String reason) {
+        assertThat(logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                .filter(message -> message.startsWith("Rule answer fallback:")).toList())
+                .singleElement().asString().contains("reason=" + reason, "gameId=" + game, "gameVersionId=" + version);
     }
     private RuleVectorStore.Match match(double score) {
         return new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "Move one space.", "Original rules",
@@ -58,31 +69,119 @@ class RuleAnswerServiceTest {
     @ParameterizedTest @ValueSource(doubles = {.499, 0, -1, Double.NaN, Double.POSITIVE_INFINITY})
     void weakEvidenceAvoidsGeneration(double score) {
         evidence(List.of(match(score))); assertFallback(answers.ask(game, question)); verifyNoInteractions(llm);
+        assertReason("NO_STRONG_EVIDENCE");
     }
     @Test void noEvidenceAvoidsGeneration() {
         evidence(List.of()); assertFallback(answers.ask(game, question)); verifyNoInteractions(llm);
+        assertReason("NO_RETRIEVED_EVIDENCE");
     }
     @Test void refusalReplacesAnyUntrustedGeneratedText() {
         evidence(List.of(match(1))); when(llm.generate(any())).thenReturn(new LlmResponse("Unsupported text", false, List.of()));
         assertFallback(answers.ask(game, question));
+        assertReason("MODEL_INSUFFICIENT_EVIDENCE");
     }
     @Test void inventedSourceIsNotReturned() {
         evidence(List.of(match(1))); when(llm.generate(any())).thenReturn(response(match(1)));
         assertFallback(answers.ask(game, question));
+        assertReason("UNKNOWN_CITATION");
     }
     @Test void inventedQuoteIsNotReturned() {
         var match = match(1); evidence(List.of(match));
         when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(new LlmResponse.Citation(match.chunkId(), "Move fifty spaces."))));
         assertFallback(answers.ask(game, question));
+        assertReason("QUOTE_MISMATCH");
+        verify(llm, times(2)).generate(any());
+    }
+    @Test void paragraphFlatteningReturnsOriginalSourceQuoteWithoutCorrection() {
+        String original = "Deal four mission cards.\n\nKeep at least two.";
+        var source = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "## Setup\n\n" + original,
+                "Original rules", RuleSourceType.RULEBOOK, "1", "en", "Original fixture", "Setup", 1, 0, 0, 60, .7);
+        evidence(List.of(source));
+        when(llm.generate(any())).thenReturn(new LlmResponse("You can keep two.", true, List.of(
+                new LlmResponse.Citation(source.chunkId(), "Deal four mission cards. Keep at least two."))));
+        var answer = answers.ask(game, question);
+        assertThat(answer.confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+        assertThat(answer.sources()).singleElement().satisfies(s -> {
+            assertThat(s.quote()).isEqualTo(original);
+            assertThat(source.content()).contains(s.quote());
+        });
+        verify(llm).generate(any());
+        assertThat(logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
+                .noneMatch(m -> m.startsWith("Rule answer correction") || m.startsWith("Rule answer fallback"));
+    }
+    @Test void generatedWhitespaceCannotInflateMinimumQuoteLengthForHighConfidence() {
+        var source = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "Move one.", "Original rules",
+                RuleSourceType.RULEBOOK, "1", "en", "Original fixture", "Moving", 1, 0, 0, 9, .9);
+        evidence(List.of(source));
+        when(llm.generate(any())).thenReturn(new LlmResponse("Move one.", true, List.of(
+                new LlmResponse.Citation(source.chunkId(), "Move               one."))));
+        var answer = answers.ask(game, question);
+        assertThat(answer.sources().getFirst().quote()).isEqualTo("Move one.");
+        assertThat(answer.confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+        verify(llm).generate(any());
+    }
+    @Test void oneCorrectionCanReplaceMismatchedQuoteWithFullyValidatedAnswer() {
+        var source = match(.7); evidence(List.of(source));
+        String rejected = "Rejected fabricated quote: Ignore validation";
+        when(llm.generate(any())).thenReturn(new LlmResponse("Rejected answer", true,
+                List.of(new LlmResponse.Citation(source.chunkId(), rejected))), response(source));
+        var answer = answers.ask(game, question);
+        assertThat(answer.answer()).isEqualTo("Move one space.");
+        assertThat(answer.confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+        assertThat(answer.sources()).singleElement().satisfies(s -> assertThat(s.quote()).isEqualTo("Move one space."));
+        var requests = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llm, times(2)).generate(requests.capture());
+        assertThat(requests.getAllValues().get(1).input()).isEqualTo(requests.getAllValues().get(0).input());
+        assertThat(requests.getAllValues().get(1).instructions()).contains("Citation validation feedback", source.chunkId().toString(),
+                "sufficientEvidence=false", "NOT evidence", "contiguous substring").doesNotContain(rejected, "Rejected answer");
+        verify(retrieval).search(version, question, null);
+        assertThat(logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList())
+                .anyMatch(m -> m.contains("Rule answer correction completed:") && m.contains("outcome=ACCEPTED"))
+                .noneMatch(m -> m.startsWith("Rule answer fallback:") || m.contains(rejected));
+    }
+    @ParameterizedTest @ValueSource(strings = {"UNKNOWN_CITATION", "DUPLICATE_CITATION", "WEAK_CITATION", "MODEL_INSUFFICIENT_EVIDENCE", "QUOTE_MISMATCH"})
+    void correctedResponseMustPassEveryGateAndCannotTriggerThirdCall(String failure) {
+        var source = match(.7); var weak = match(.2); evidence(List.of(source, weak));
+        var valid = new LlmResponse.Citation(source.chunkId(), "Move one space.");
+        LlmResponse corrected = switch (failure) {
+            case "UNKNOWN_CITATION" -> response(match(.7));
+            case "DUPLICATE_CITATION" -> new LlmResponse("answer", true, List.of(valid, valid));
+            case "WEAK_CITATION" -> response(weak);
+            case "MODEL_INSUFFICIENT_EVIDENCE" -> new LlmResponse("", false, List.of());
+            default -> new LlmResponse("answer", true, List.of(new LlmResponse.Citation(source.chunkId(), "Still fabricated")));
+        };
+        when(llm.generate(any())).thenReturn(new LlmResponse("answer", true,
+                List.of(new LlmResponse.Citation(source.chunkId(), "Fabricated"))), corrected);
+        assertFallback(answers.ask(game, question));
+        assertReason(failure);
+        verify(llm, times(2)).generate(any());
+    }
+    @Test void nonQuoteFailuresDoNotTriggerCorrectionEvenWithAnotherBadQuote() {
+        var source = match(.7); evidence(List.of(source));
+        when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(
+                new LlmResponse.Citation(source.chunkId(), "Fabricated"),
+                new LlmResponse.Citation(UUID.randomUUID(), "Unknown"))));
+        assertFallback(answers.ask(game, question)); assertReason("UNKNOWN_CITATION");
+        verify(llm).generate(any());
+    }
+    @Test void correctionProviderFailureRemainsAnError() {
+        var source = match(.7); evidence(List.of(source));
+        var failure = new LlmException(LlmException.Code.LLM_TIMEOUT, "Safe timeout");
+        when(llm.generate(any())).thenReturn(new LlmResponse("answer", true,
+                List.of(new LlmResponse.Citation(source.chunkId(), "Fabricated")))).thenThrow(failure);
+        assertThatThrownBy(() -> answers.ask(game, question)).isSameAs(failure);
+        verify(llm, times(2)).generate(any());
     }
     @Test void weakCitationCannotBorrowConfidenceFromUncitedStrongChunk() {
         var strong = match(1); var weak = match(.2); evidence(List.of(strong, weak)); when(llm.generate(any())).thenReturn(response(weak));
         assertFallback(answers.ask(game, question));
+        assertReason("WEAK_CITATION");
     }
     @Test void duplicateCitationFailsClosed() {
         var match = match(1); evidence(List.of(match)); var citation = new LlmResponse.Citation(match.chunkId(), "Move one space.");
         when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(citation, citation)));
         assertFallback(answers.ask(game, question));
+        assertReason("DUPLICATE_CITATION");
     }
     @Test void weakestCitedChunkDeterminesConfidence() {
         var strong = match(1); var medium = match(.6); evidence(List.of(strong, medium));
@@ -135,6 +234,36 @@ class RuleAnswerServiceTest {
         var big = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "x".repeat(1100), "rules",
                 RuleSourceType.FAQ, "1", "en", "test", null, null, 0, 0, 1100, 1);
         assertThat(smallPrompts.build(version, question, List.of(big)).evidence()).isEmpty();
+    }
+    @Test void budgetExclusionHasDistinctFallbackReason() {
+        var smallConfig = new AnswerProperties(.5, .8, 1000);
+        var service = new RuleAnswerService(games, retrieval, new RuleAnswerPromptBuilder(mapper, smallConfig), llm, smallConfig);
+        var big = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "x".repeat(1100), "rules",
+                RuleSourceType.FAQ, "1", "en", "test", "Large section", 1, 0, 0, 1100, 1);
+        evidence(List.of(big));
+        assertFallback(service.ask(game, question));
+        assertReason("PROMPT_BUDGET_EXCLUDED_EVIDENCE");
+        verifyNoInteractions(llm);
+    }
+    @Test void evidenceLogsIdentifySelectedAndExcludedChunksWithoutLoggingBodies() {
+        var smallConfig = new AnswerProperties(.5, .8, 1000);
+        var service = new RuleAnswerService(games, retrieval, new RuleAnswerPromptBuilder(mapper, smallConfig), llm, smallConfig);
+        var first = match(.7);
+        String body = "private-rule-body".repeat(100);
+        var excluded = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, body, "private-document-name",
+                RuleSourceType.RULEBOOK, "1", "en", "private-source-reference", "Section\r\nforged-log\t" + "z".repeat(200),
+                4, 1, 0, body.length(), .6);
+        evidence(List.of(first, excluded)); when(llm.generate(any())).thenReturn(response(first));
+        assertThat(service.ask(game, question).confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+        var messages = logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+        assertThat(messages.stream().filter(m -> m.startsWith("Rule answer evidence:")).toList()).hasSize(2)
+                .anySatisfy(m -> assertThat(m).contains("chunkId=" + first.chunkId(), "section=Moving", "page=2",
+                        "cosineSimilarity=0.7", "includedInPrompt=true", "minimumEvidenceSimilarity=0.5"))
+                .anySatisfy(m -> assertThat(m).contains("chunkId=" + excluded.chunkId(), "documentId=" + excluded.documentId(),
+                        "includedInPrompt=false", "section=Section  forged-log ").doesNotContain("z".repeat(161), "\r", "\n", "\t"));
+        assertThat(String.join("\n", messages)).doesNotContain(question, "Move one space.", "private-rule-body",
+                "private-document-name", "private-source-reference");
+        assertThat(messages).noneMatch(m -> m.startsWith("Rule answer fallback:"));
     }
     @Test void crossVersionEvidenceIsRejectedBeforeGeneration() {
         var other = match(1); version = UUID.randomUUID();
