@@ -8,11 +8,12 @@ Milestone 3 adds `ai` embedding types/adapters and `rag` indexing/retrieval appl
 storage-port, PostgreSQL adapter and DTO HTTP operations.
 
 Milestone 6 adds `session.domain`, `session.application`, `session.infrastructure` and `session.api`.
-`gamemaster` and `setup` remain reserved boundaries containing documentation only.
+Milestone 7 adds the `setup` domain/application/infrastructure/api packages.
+`gamemaster` remains a reserved boundary.
 Add domain/application/infrastructure/api subpackages only as each milestone needs them.
 Milestone 4 adds provider-neutral LLM contracts, an opt-in HTTP adapter, a dedicated evidence
 prompt builder and stateless default-version question answering. Milestone 6 reuses this pipeline
-for pinned session rulesets and bounded conversational context. Setup and speech remain deferred.
+for pinned session rulesets and bounded conversational context. Guided setup is implemented in Milestone 7; speech remains deferred.
 
 `Game` represents a logical game; `GameVersion` owns edition, version label, language,
 and default/active flags. UUID ownership is enforced by a database foreign key and scoped
@@ -130,8 +131,8 @@ array; refusal becomes insufficient evidence and malformed/incomplete output bec
 of embeddings, disabled by default and accepts blank legacy provider/model values. Timing logs
 contain game/version IDs and durations, not prompts, questions, excerpts, answers or keys.
 
-Milestone 7 remains unstarted. Live OpenAI testing for Milestone 3 is still deferred; Milestone 4
-provider interoperability and generated-answer quality are also unverified against live APIs.
+A limited user-run live OpenAI walkthrough passed on 2026-10-08 (recorded in DEVELOPMENT_STATUS.md).
+Broader provider interoperability, grounding and generated-answer quality evaluation remain deferred.
 
 `RetrievalFilters` carries normalized language, source types, owned document IDs and explicitly
 selected owned EXPANSION document IDs. Filters intersect and cannot alter the selected ruleset.
@@ -202,9 +203,8 @@ TEACHING, with STANDARD depth by default. CONTINUE marks the current section com
 to the next applicable section; PREVIOUS preserves completion history. REPEAT returns stored
 content; EXPLAIN_AGAIN presents authored content/examples/tips without an LLM rewrite. Final
 CONTINUE enters PLAYING in the same session. Explicit completion records COMPLETED and endedAt;
-reads remain available while writes are rejected. SETUP is reserved as a stage only. No setup
-tables, triggers, steps, execution or teaching interruption/resume behavior are implemented.
-Responses explicitly state that physical setup has not been verified. These are Milestone 7 concerns.
+reads remain available while writes are rejected. Milestone 7 adds SETUP execution and a saved
+teaching return position. Setup completion is the user's confirmation, not physical-board verification.
 
 `SessionRepository` encapsulates parameterized JdbcTemplate persistence and immutable record
 mapping. The existing JPA transaction manager also binds JDBC work to the same datasource.
@@ -223,14 +223,14 @@ The service is the boundary for a future summarization policy; no summarizer is 
 Session expansion selection is not implemented; existing retrieval defaults exclude expansions.
 
 `AnswerConversation` is a provider-neutral context contract. Retrieval combines the complete
-current question with the latest retained user question and lesson title, respecting both the
+current question with the current setup title (during SETUP), latest retained user question and lesson title, respecting both the
 configured embedding character limit and the 4000-character question limit. This deterministic
 topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.
 `RuleAnswerService.askPinned` validates version ownership without resolving the mutable default.
 The prompt includes structured session/context data as untrusted reference-resolution context;
-lesson text and past assistant answers never become source evidence. Existing version/profile
+lesson/setup text and past assistant answers never become source evidence. Existing version/profile
 isolation, threshold/deduplication, evidence gates, exact citations and LOW fallback still apply.
-The serialized prompt budget drops oldest context turns, then lesson explanation, then context
+The serialized prompt budget drops oldest context turns, then lesson explanation, then setup instruction, then context
 metadata as necessary to retain the first retrieved evidence chunk. Evidence itself keeps the
 existing whole-chunk budget policy. No LLM chooses workflow state or lesson order.
 
@@ -255,4 +255,48 @@ Milestone 6 tests cover domain transitions/depth/navigation, bounded structured 
 HTTP session/flow/history operations, default/flow pinning, grounded follow-ups, cross-session
 isolation, provider failures, atomic exchange rollback, concurrent navigation/questions and V5
 upgrade preservation. They use isolated PostgreSQL/pgvector containers and provider doubles.
-Live OpenAI testing for Milestones 3 and 4 remains explicitly deferred. Milestone 7 is unstarted.
+The limited user-run live walkthrough supplements these automated results; broader quality evaluation
+remains deferred. Milestone 8 voice and browser UI are unstarted.
+
+## Guided setup (Milestone 7)
+
+`SetupFlow` and ordered `SetupStep` are immutable version-bound authored data with bounded
+instructions, notes and warnings. `SetupService` publishes configurations atomically, exposes
+current state and delegates navigation to `GameSession` / `SetupProgress`. No game-specific
+branch or LLM chooses the next step. One optional teaching-section trigger applies at all depths.
+CONTINUE at an unfinished trigger saves the current lesson, enters SETUP and leaves that lesson
+uncompleted. Explicit start from TEACHING supports other authored lesson flows.
+
+V7 adds setup_flows/setup_steps and session columns for the pinned setup flow, active step,
+confirmed step keys, return lesson and completion flag. Composite FKs enforce ruleset, step
+and teaching-return ownership. Progress checks prohibit SETUP without an active unfinished step.
+New sessions pin configured setup alongside teaching; legacy sessions choose a setup flow at first
+start if needed, then keep it pinned. Navigation and restart lock the session row and compare the
+expected revision. Current setup reads use a repeatable-read snapshot. Provider calls remain
+outside transactions; question writes compare the captured revision, so concurrent setup changes
+cannot append a stale answer or overwrite progress.
+
+NEXT confirms the current step; PREVIOUS preserves confirmations and stops at the first step.
+REPEAT preserves state. NEXT cannot leave the last step. COMPLETE requires all preceding steps
+and confirms the last, returning SETUP to TEACHING at the saved lesson, never directly PLAYING.
+A subsequent CONTINUE advances teaching normally without repeating confirmed setup. RESTART
+requires previously started setup and SETUP or TEACHING; it clears only setup confirmations.
+Restart during SETUP retains the saved return point; during TEACHING it saves the current lesson.
+Session completion at any active stage preserves readable setup/history and prevents further writes.
+
+During SETUP, bounded AnswerConversation context includes the active step key, title and
+instruction. That content resolves references but cannot supply rule citations; only retrieved
+version-scoped documents are evidence. Prompt budgeting trims setup instruction before discarding
+all context and keeps the existing whole-evidence policy.
+
+V7 seeds six original Catan beginner steps with a pointer to the physical beginner diagram. It
+publishes a new setup-trigger teaching flow only when the latest Catan flow is the original V6
+seed. Old flows/sessions and user publications remain intact; existing documents/vectors/history
+are untouched. New reference counts are QUICK 8 / STANDARD 10 / DETAILED 11. No commercial
+rulebook files or diagrams are bundled, and authored setup is not automatically indexed. Legacy
+non-trigger flows retain their old behavior; readiness does not imply setup was confirmed.
+
+Tests cover generic and Catan journeys, every depth, explicit/triggered start, boundaries/restart,
+saved-lesson resume, version/flow pins, Q&A context and failures, stale concurrent requests,
+transaction rollback, database ownership and V6 upgrade preservation. They use isolated PostgreSQL
+and mocked AI providers. Live setup-specific provider/physical walkthroughs remain unverified.

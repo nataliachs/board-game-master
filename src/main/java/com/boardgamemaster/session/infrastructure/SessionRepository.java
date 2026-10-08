@@ -2,6 +2,7 @@ package com.boardgamemaster.session.infrastructure;
 
 import com.boardgamemaster.rag.application.RuleAnswer;
 import com.boardgamemaster.session.domain.*;
+import com.boardgamemaster.setup.domain.SetupProgress;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,17 +38,17 @@ public class SessionRepository {
                 read(r.getString("depths"), new TypeReference<Set<TeachingDepth>>() {}),
                 read(r.getString("examples"), new TypeReference<List<String>>() {}),
                 read(r.getString("tips"), new TypeReference<List<String>>() {}),
-                read(r.getString("rule_references"), new TypeReference<List<String>>() {})), id);
+                read(r.getString("rule_references"), new TypeReference<List<String>>() {}), r.getBoolean("setup_trigger")), id);
     }
     public void insertFlow(TeachingFlow flow) {
         jdbc.update("INSERT INTO teaching_flows(id,game_version_id,name,created_at) VALUES (?,?,?,?)",
                 flow.id(), flow.gameVersionId(), flow.name(), java.sql.Timestamp.from(flow.createdAt()));
         for (var section : flow.sections()) {
             jdbc.update("""
-                    INSERT INTO teaching_sections(id,teaching_flow_id,section_key,section_order,title,explanation,depths,examples,tips,rule_references)
-                    VALUES (?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb)
+                    INSERT INTO teaching_sections(id,teaching_flow_id,section_key,section_order,title,explanation,depths,examples,tips,rule_references,setup_trigger)
+                    VALUES (?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?)
                     """, UUID.randomUUID(), flow.id(), section.key(), section.order(), section.title(), section.explanation(),
-                    write(section.depths()), write(section.examples()), write(section.tips()), write(section.references()));
+                    write(section.depths()), write(section.examples()), write(section.tips()), write(section.references()), section.setupTrigger());
         }
     }
     public GameSession session(UUID id, boolean lock) {
@@ -62,22 +63,29 @@ public class SessionRepository {
                 r.getObject("teaching_flow_id", UUID.class), r.getInt("player_count"), TeachingDepth.valueOf(r.getString("teaching_depth")),
                 SessionStage.valueOf(r.getString("stage")), GameSession.Status.valueOf(r.getString("status")), r.getString("current_section_key"),
                 read(r.getString("completed_sections"), new TypeReference<Set<String>>() {}), r.getLong("revision"),
-                r.getTimestamp("created_at").toInstant(), r.getTimestamp("ended_at") == null ? null : r.getTimestamp("ended_at").toInstant());
+                r.getTimestamp("created_at").toInstant(), r.getTimestamp("ended_at") == null ? null : r.getTimestamp("ended_at").toInstant(),
+                r.getObject("setup_flow_id") == null ? null : new SetupProgress(r.getObject("setup_flow_id", UUID.class),
+                        r.getString("current_setup_step_key"), read(r.getString("completed_setup_steps"), new TypeReference<Set<String>>() {}),
+                        r.getString("setup_return_section_key"), r.getBoolean("setup_completed")));
     }
     public void insertSession(GameSession s) {
         jdbc.update("""
                 INSERT INTO game_sessions(id,game_version_id,teaching_flow_id,player_count,teaching_depth,stage,status,
-                    current_section_key,completed_sections,revision,created_at)
-                VALUES (?,?,?,?,?,?,?,?,?::jsonb,?,?)
+                    current_section_key,completed_sections,revision,created_at,setup_flow_id)
+                VALUES (?,?,?,?,?,?,?,?,?::jsonb,?,?,?)
                 """, s.id(), s.gameVersionId(), s.teachingFlowId(), s.playerCount(), s.teachingDepth().name(), s.stage().name(),
-                s.status().name(), s.currentSectionKey(), write(s.completedSections()), s.revision(), java.sql.Timestamp.from(s.createdAt()));
+                s.status().name(), s.currentSectionKey(), write(s.completedSections()), s.revision(), java.sql.Timestamp.from(s.createdAt()), s.setup() == null ? null : s.setup().flowId());
     }
     public void updateSession(GameSession s, long expectedRevision) {
         int updated = jdbc.update("""
-                UPDATE game_sessions SET stage=?, status=?, current_section_key=?, completed_sections=?::jsonb, revision=?, ended_at=?
+                UPDATE game_sessions SET stage=?, status=?, current_section_key=?, completed_sections=?::jsonb, revision=?, ended_at=?,
+                    setup_flow_id=?,current_setup_step_key=?,completed_setup_steps=?::jsonb,setup_return_section_key=?,setup_completed=?
                 WHERE id=? AND revision=?
                 """, s.stage().name(), s.status().name(), s.currentSectionKey(), write(s.completedSections()), s.revision(),
-                s.endedAt() == null ? null : java.sql.Timestamp.from(s.endedAt()), s.id(), expectedRevision);
+                s.endedAt() == null ? null : java.sql.Timestamp.from(s.endedAt()),
+                s.setup() == null ? null : s.setup().flowId(), s.setup() == null ? null : s.setup().currentStepKey(),
+                write(s.setup() == null ? Set.of() : s.setup().completedStepKeys()), s.setup() == null ? null : s.setup().returnSectionKey(),
+                s.setup() != null && s.setup().completed(), s.id(), expectedRevision);
         if (updated != 1) { throw conflict(); }
     }
     public void claimMessageRevision(UUID id, long revision) {

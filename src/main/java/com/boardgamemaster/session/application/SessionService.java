@@ -4,6 +4,8 @@ import com.boardgamemaster.game.application.GameService;
 import com.boardgamemaster.rag.application.*;
 import com.boardgamemaster.session.domain.*;
 import com.boardgamemaster.session.infrastructure.SessionRepository;
+import com.boardgamemaster.setup.infrastructure.SetupRepository;
+import com.boardgamemaster.setup.domain.SetupProgress;
 import java.time.Instant;
 import java.util.*;
 import org.slf4j.Logger;
@@ -21,12 +23,13 @@ public class SessionService {
     private static final Logger LOG = LoggerFactory.getLogger(SessionService.class);
     private final SessionRepository repository;
     private final SessionContextService contexts;
+    private final SetupRepository setups;
     private final GameService games;
     private final RuleAnswerService answers;
     private final TransactionTemplate transaction;
     public SessionService(SessionRepository repository, SessionContextService contexts, GameService games,
-            RuleAnswerService answers, PlatformTransactionManager manager) {
-        this.repository = repository; this.contexts = contexts; this.games = games; this.answers = answers;
+            RuleAnswerService answers, SetupRepository setups, PlatformTransactionManager manager) {
+        this.setups = setups; this.repository = repository; this.contexts = contexts; this.games = games; this.answers = answers;
         transaction = new TransactionTemplate(manager);
     }
     public LessonView create(UUID gameId, Integer players, TeachingDepth depth) {
@@ -34,9 +37,11 @@ public class SessionService {
         UUID id = transaction.execute(status -> {
             var version = games.resolveDefaultVersion(gameId, players);
             var flow = repository.latestFlow(version.getId());
+            var setupFlow = setups.latest(version.getId());
+            if (flow.sections().stream().anyMatch(TeachingSection::setupTrigger) && setupFlow.isEmpty()) { setups.requireLatest(version.getId()); }
             var selectedDepth = depth == null ? TeachingDepth.STANDARD : depth;
             var session = new GameSession(UUID.randomUUID(), gameId, version.getId(), flow.id(), players, selectedDepth,
-                    SessionStage.TEACHING, GameSession.Status.ACTIVE, flow.sectionsFor(selectedDepth).getFirst().key(), Set.of(), 0, Instant.now(), null);
+                    SessionStage.TEACHING, GameSession.Status.ACTIVE, flow.sectionsFor(selectedDepth).getFirst().key(), Set.of(), 0, Instant.now(), null, setupFlow.map(f -> SetupProgress.pinned(f.id())).orElse(null));
             repository.insertSession(session);
             return session.id();
         });
@@ -56,14 +61,23 @@ public class SessionService {
         return new LessonView(context.session(), context.lesson(), applicable.indexOf(context.lesson()) + 1, applicable.size(),
                 context.session().stage() == SessionStage.PLAYING,
                 explanation,
-                context.session().stage() == SessionStage.PLAYING ? "Teaching complete. Ready to play; ask rule questions in this same session. Guided setup is not implemented yet."
+                context.session().stage() == SessionStage.PLAYING ? "Teaching complete. Ready to play; ask rule questions in this same session."
                         : context.session().stage() == SessionStage.COMPLETED ? "Session completed. Your lessons and conversation history remain available."
-                        : "Guided physical setup is not available yet. This teaching flow does not confirm setup completion.");
+                        : context.session().stage() == SessionStage.SETUP ? "Guided setup is in progress. Use the setup controls; teaching will resume at this lesson."
+                        : context.session().setup() == null ? "No guided setup is configured for this session."
+                        : context.session().setup().completed() ? "Setup confirmation saved. Continue teaching when ready."
+                        : "Guided setup has not been completed. It can start at the setup lesson or through the setup controls.");
     }
     public LessonView navigate(UUID id, GameSession.Action action, long expectedRevision) {
         transaction.executeWithoutResult(status -> {
             var session = locked(id, expectedRevision);
-            repository.updateSession(session.navigate(repository.flow(session.teachingFlowId()), action), session.revision());
+            var flow = repository.flow(session.teachingFlowId());
+            var lesson = flow.sections().stream().filter(s -> s.key().equals(session.currentSectionKey())).findFirst().orElseThrow();
+            var next = action == GameSession.Action.CONTINUE && session.stage() == SessionStage.TEACHING
+                    && lesson.setupTrigger() && (session.setup() == null || !session.setup().completed())
+                    ? session.startSetup(session.setup() == null ? setups.requireLatest(session.gameVersionId()) : setups.flow(session.setup().flowId()), false)
+                    : session.navigate(flow, action);
+            repository.updateSession(next, session.revision());
         });
         return view(contexts.load(id), action == GameSession.Action.EXPLAIN_AGAIN);
     }

@@ -47,4 +47,18 @@ class SessionPromptTest {
         assertThat(query).startsWith("Question").hasSizeLessThanOrEqualTo(30);
         assertThat(Character.isHighSurrogate(query.charAt(query.length() - 1))).isFalse();
     }
+
+    @Test void setupInstructionsRemainContextAndAreTrimmedBeforeEvidence() throws Exception {
+        var context = new AnswerConversation(UUID.randomUUID(), "Game", "Edition", "en", 3, "STANDARD", "SETUP", "Prepare", "",
+                List.of(), new AnswerConversation.SetupContext("FIRST", "Prepare pieces", "Unsupported teleport rule. ".repeat(250)));
+        var source = match();
+        var builder = new RuleAnswerPromptBuilder(mapper, new AnswerProperties(.5, .8, 1000));
+        var prompt = builder.build(version, "Can I move?", List.of(source), context);
+        assertThat(prompt.request().input()).hasSizeLessThanOrEqualTo(1000).doesNotContain("Unsupported teleport");
+        assertThat(prompt.evidence()).containsExactly(source);
+        assertThat(mapper.readTree(prompt.request().input()).path("conversation").path("setup").path("title").asText()).isEqualTo("Prepare pieces");
+        var noEvidence = new RuleAnswerPromptBuilder(mapper, new AnswerProperties(.5, .8, 24000)).build(version, "Can I teleport?", List.of(), context);
+        assertThat(noEvidence.evidence()).isEmpty();
+        assertThat(mapper.readTree(noEvidence.request().input()).path("excerpts").size()).isZero();
+    }
 }

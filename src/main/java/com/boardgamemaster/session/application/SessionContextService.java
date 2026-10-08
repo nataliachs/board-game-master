@@ -18,7 +18,9 @@ public class SessionContextService {
     private final SessionRepository repository;
     private final GameService games;
     private final SessionProperties config;
-    public SessionContextService(SessionRepository repository, GameService games, SessionProperties config) {
+    private final com.boardgamemaster.setup.infrastructure.SetupRepository setups;
+    public SessionContextService(SessionRepository repository, GameService games, SessionProperties config, com.boardgamemaster.setup.infrastructure.SetupRepository setups) {
+        this.setups = setups;
         this.repository = repository; this.games = games; this.config = config;
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -29,9 +31,15 @@ public class SessionContextService {
         var flow = repository.flow(session.teachingFlowId());
         var lesson = flow.sectionsFor(session.teachingDepth()).stream().filter(s -> s.key().equals(session.currentSectionKey())).findFirst().orElseThrow();
         var recent = bound(repository.messages(id, Long.MAX_VALUE, config.recentMessageLimit()), config.contextCharacters());
+        AnswerConversation.SetupContext setupContext = null;
+        if (session.stage() == SessionStage.SETUP && session.setup() != null) {
+            var setupFlow = setups.flow(session.setup().flowId());
+            var step = setupFlow.steps().stream().filter(s -> s.key().equals(session.setup().currentStepKey())).findFirst().orElseThrow();
+            setupContext = new AnswerConversation.SetupContext(step.key(), step.title(), step.instruction());
+        }
         return new Context(session, flow, lesson, new AnswerConversation(id, game.getName(), version.getEdition(),
                 version.getLanguage(), session.playerCount(), session.teachingDepth().name(), session.stage().name(),
-                lesson.title(), lesson.explanation(), recent));
+                lesson.title(), lesson.explanation(), recent, setupContext));
     }
     static List<AnswerConversation.Turn> bound(List<ConversationMessage> messages, int characters) {
         var selected = new ArrayList<AnswerConversation.Turn>();

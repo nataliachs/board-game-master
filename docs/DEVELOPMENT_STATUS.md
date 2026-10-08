@@ -34,14 +34,15 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-Milestones 0–6 are complete and validated with provider doubles. Sessions, progressive teaching
-and bounded conversational Q&A are implemented. Guided setup, voice and browser UI remain planned.
+Milestones 0–7 are complete and validated with provider doubles. Sessions, progressive teaching,
+bounded conversational Q&A and guided setup with teaching resume are implemented. Voice and
+browser UI remain planned for Milestone 8.
 
 ## Current Milestone
 
-**Milestone 6 — Game Sessions + Teaching Flow (complete and validated with provider doubles)**
+**Milestone 7 — Guided Setup Integrated with Teaching (complete and validated with provider doubles)**
 
-Milestone 7 remains unstarted. The user completed a limited live OpenAI Lantern Trail walkthrough
+Milestone 8 remains unstarted. The user completed a limited live OpenAI Lantern Trail walkthrough
 on 2026-10-08, exercising Milestones 3, 4 and 6. Broader live-model quality evaluation remains
 deferred; the original automated validation history below is preserved.
 
@@ -54,7 +55,7 @@ deferred; the original automated validation history below is preserved.
 - [x] Milestone 4 — RAG Question Answering
 - [x] Milestone 5 — Production-Quality RAG
 - [x] Milestone 6 — Game Sessions + Teaching Flow
-- [ ] Milestone 7 — Guided Setup Integrated with Teaching
+- [x] Milestone 7 — Guided Setup Integrated with Teaching
 - [ ] Milestone 8 — Voice + Minimal Demo UI
 
 ## Milestone 0 — Project Bootstrap
@@ -196,9 +197,9 @@ Customer experience must be teaching-first.
 
 ## Milestone 7 — Guided Setup Integrated with Teaching
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Complete and validated with provider doubles; setup-specific live provider/physical walkthroughs remain unverified.
 
-Expected:
+Implemented:
 
 - SetupFlow
 - SetupStep
@@ -254,6 +255,20 @@ The application should be demonstrable without Swagger or Postman.
 
 ## Current work
 
+Milestone 7 is implemented on `milestone-7-guided-setup`; changes remain unstaged and uncommitted.
+No commit, push or branch change was performed. Milestone 8 is unstarted.
+
+- V7 adds immutable version-bound SetupFlow/SetupStep and persisted session setup progress, flow/step/return-lesson ownership constraints and setup-trigger configuration. V1–V6 migrations are unchanged.
+- New sessions pin the configured setup flow. Legacy sessions can pin that version's latest setup at first explicit start; later publications/default changes never repin started setup.
+- CONTINUE at an unfinished setup-trigger lesson enters SETUP and saves that same lesson without completing it. Explicit start, current, next, previous, repeat, restart and complete APIs are implemented. Completion acknowledges the last step only after prior steps and returns to TEACHING, never directly PLAYING; another Continue advances normally.
+- Restart clears setup confirmations while retaining teaching progress/history. Step navigation uses locked revision checks. Questions preserve setup progress; context includes the active step as untrusted context rather than citation evidence. Provider failures and stale answers leave no partial exchange.
+- Six original Catan beginner setup steps reference the physical beginner diagram. A replacement seed teaching flow has QUICK 8 / STANDARD 10 / DETAILED 11 sections. Existing sessions keep the V6 flow; user-published Catan teaching is not replaced. No commercial rulebook/diagram is bundled or automatically indexed.
+- README includes provider-free Catan and Lantern Trail setup demonstrations, revision handling and optional setup Q&A. No new environment variables, dependency/provider changes or private `.env` access were needed.
+- Full validation passed 279 tests (192 unit, 87 isolated PostgreSQL/HTTP integration), zero failures/errors/skips, and built the executable JAR. Existing live OpenAI evidence is preserved verbatim below; no new paid calls or user-database operations were performed.
+
+### Earlier implementation record (Milestones 0–6)
+
+
 - Java 21 Spring Boot Gradle application and checksum-pinned Gradle wrapper.
 - Feature package boundaries, local/test/production configuration, ECS JSON logging, and request IDs.
 - Docker Compose PostgreSQL 17 with pgvector, persistent storage, localhost binding, and readiness check.
@@ -303,15 +318,16 @@ The application should be demonstrable without Swagger or Postman.
 - Reference Catan data is an original introductory overview with seven QUICK, nine STANDARD and ten DETAILED lessons. No commercial rulebook is imported; teaching text is not automatically indexed or used as citation evidence. Setup remains explicitly deferred.
 - README documents provider-free lesson demonstration, optional paid Q&A, configuration, flow publication, history and completion.
 
-Work remains uncommitted on `milestone-6-session-management`. No commit, push, staging or branch
-change is performed. Milestone 7 remains unstarted. The limited live OpenAI walkthrough below
+At the original Milestone 6 implementation, work was uncommitted on `milestone-6-session-management`
+and Milestone 7 was unstarted. The limited live OpenAI walkthrough below
 supplements the original deferred-testing record for Milestones 3 and 4; broader quality
 evaluation remains deferred and this implementation makes no general live-model quality claims.
 
 ## Major Architectural Decisions
 
-Teaching/session decisions are implemented in Milestone 6. Setup, voice and demo UI decisions
-remain planned work in Milestones 7–8.
+Teaching/session decisions are implemented in Milestone 6 and setup in Milestone 7. Voice and
+demo UI remain planned for Milestone 8.
+- Setup progress is independent of conversation: one all-depth teaching trigger, a version-bound pinned setup flow, explicit per-step confirmation and a saved teaching return point. Completion returns to TEACHING before readiness; shared engines contain no Catan-specific assumptions.
 - Modular monolith, organized by feature.
 - Game identifies the logical board game; GameVersion identifies its edition/language/ruleset.
 - Customers normally select Game only; the backend resolves a default GameVersion and pins it to the session.
@@ -403,6 +419,17 @@ The Phase 5 UI is a lightweight demonstration/testing interface.
 It must remain thin and reuse backend application logic.
 
 ## Validation
+
+### Milestone 7
+
+Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- Compilation and focused domain/session integration checks passed before the full suite.
+- `gradlew.bat check bootJar --no-daemon --console=plain` — PASS: all 279 tests (192 unit, 87 isolated PostgreSQL/pgvector integration), zero failures/errors/skips; executable JAR built. AI calls use doubles, without real keys or paid calls. Testcontainers databases are separate from the user's Compose database.
+- Coverage includes generic and seeded Catan journeys; all depths; explicit/triggered setup; current/next/previous/repeat/restart/complete; first/last/single-step boundaries; saved teaching resume; readiness after further teaching; history and progress preservation during Q&A; evidence/context isolation and prompt budgets; missing/invalid configuration; immutable flow/version pins; provider failure; duplicate-action and restart-versus-question races; transaction rollback; database ownership; V6 upgrade/session/history/custom-publication preservation and repeatable migrations.
+- Existing Milestone 0–6 checks, including deterministic retrieval evaluation and earlier migration/data-preservation tests, pass. Original live OpenAI walkthrough text is unchanged.
+- Limitations: no live setup-specific OpenAI or physical-board walkthrough was performed. Catan guidance is an original concise beginner configuration requiring the physical rulebook diagram, not a complete rulebook or automatic board verification. Authored setup is not automatically indexed as evidence. Broader live grounding, confidence calibration, multi-game/adversarial/provider-failure evaluation remain deferred as recorded below. Legacy flows without setup triggers keep their earlier readiness behavior.
+- No staging, commit, push or branch change. Milestone 8 remains unstarted: no speech adapters, audio endpoints, templates or browser UI.
 
 ### User-run live OpenAI walkthrough — 2026-10-08
 
@@ -530,9 +557,9 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining automated Milestone 6 acceptance blockers are known. Docker/WSL is working. Milestone 7 remains unstarted. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation remains deferred.
-- Session/teaching APIs are local-development functionality without authentication. Flows are append-only and existing sessions pin their original content. Reference Catan lessons are an original introductory overview, not a complete commercial rulebook; authored reading pointers are not verified generated-answer citations. Physical setup is not executed or confirmed.
-- Session context keeps a bounded window of whole messages; an oversized newest message can leave no retained history. Retrieval uses deterministic recent-user-topic/lesson cues rather than model-driven rewriting. The prompt budget may further remove context to retain source evidence. Summarization, persisted expansion selection, retention/deletion policies and live follow-up quality remain unimplemented/unverified.
+- No remaining automated Milestone 7 acceptance blockers are known. Docker/WSL is working. Milestone 8 remains unstarted. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation remains deferred.
+- Session/teaching/setup APIs are local-development functionality without authentication. Flows are append-only and existing sessions pin their original content. Reference Catan lessons are an original introductory overview, not a complete commercial rulebook; authored reading pointers are not verified generated-answer citations. Setup confirmations are recorded, but the application cannot verify the physical board. Setup-specific live provider/physical walkthroughs remain unverified.
+- Session context keeps a bounded window of whole messages; an oversized newest message can leave no retained history. Retrieval uses deterministic recent-user-topic/lesson/setup-title cues rather than model-driven rewriting. The prompt budget may further remove context to retain source evidence. Summarization, persisted expansion selection, retention/deletion policies and live follow-up quality remain unimplemented/unverified.
 - Session revisions reject duplicate actions and discard stale generated answers after concurrent changes with no partial exchange. Provider requests completed before a conflict may still incur charges; no automatic retry is performed.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
 - Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; retrieval suppresses duplicates without deleting stored documents/chunks.

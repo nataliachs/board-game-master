@@ -7,6 +7,8 @@ import com.boardgamemaster.rules.application.RuleDocumentService;
 import com.boardgamemaster.rules.domain.*;
 import com.boardgamemaster.session.application.*;
 import com.boardgamemaster.session.domain.*;
+import com.boardgamemaster.setup.application.SetupService;
+import com.boardgamemaster.setup.domain.*;
 import com.fasterxml.jackson.databind.*;
 import java.net.URI;
 import java.net.http.*;
@@ -46,6 +48,7 @@ class SessionIntegrationTest {
     @MockitoBean LlmClient llm;
     @Autowired GameService games;
     @Autowired TeachingService teaching;
+    @Autowired SetupService setups;
     @Autowired SessionService sessions;
     @Autowired SessionContextService contexts;
     @Autowired RuleDocumentService documents;
@@ -114,16 +117,16 @@ class SessionIntegrationTest {
         assertThat(s.session().teachingDepth()).isEqualTo(TeachingDepth.STANDARD);
         assertThat(s.session().stage()).isEqualTo(SessionStage.TEACHING);
         assertThat(s.lessonNumber()).isEqualTo(1); assertThat(s.totalLessons()).isEqualTo(2);
-        assertThat(s.readyToPlay()).isFalse(); assertThat(s.notice()).contains("not available yet");
+        assertThat(s.readyToPlay()).isFalse(); assertThat(s.notice()).contains("No guided setup is configured");
         assertThat(json(request("GET", path(id), null), 200).path("lesson").path("key").asText()).isEqualTo("START");
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
-    @Test void referenceCatanSupportsEveryDepthWithoutProvidersOrSetup() {
+    @Test void referenceCatanSupportsEveryDepthWithoutProviders() {
         for (var depth : TeachingDepth.values()) {
             var s = sessions.create(CATAN, 4, depth);
             assertThat(s.session().gameVersionId()).isEqualTo(CATAN_VERSION);
             assertThat(s.lesson().key()).isEqualTo("INTRODUCTION");
-            assertThat(s.totalLessons()).isEqualTo(depth == TeachingDepth.QUICK ? 7 : depth == TeachingDepth.STANDARD ? 9 : 10);
+            assertThat(s.totalLessons()).isEqualTo(depth == TeachingDepth.QUICK ? 8 : depth == TeachingDepth.STANDARD ? 10 : 11);
         }
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
@@ -199,7 +202,7 @@ class SessionIntegrationTest {
         sessions.navigate(id, GameSession.Action.CONTINUE, 0);
         var playing = sessions.navigate(id, GameSession.Action.CONTINUE, 1);
         assertThat(playing.readyToPlay()).isTrue(); assertThat(playing.session().id()).isEqualTo(id);
-        assertThat(playing.notice()).contains("Guided setup is not implemented");
+        assertThat(playing.notice()).contains("Ready to play");
         var result = sessions.ask(id, "How far do I move?");
         var completed = json(request("POST", path(id) + "/complete", Map.of("expectedRevision", result.revision())), 200);
         assertThat(completed.path("session").path("stage").asText()).isEqualTo("COMPLETED");
@@ -328,7 +331,7 @@ class SessionIntegrationTest {
         assertThat(paths.has("/api/v1/sessions/{id}/messages")).isTrue();
         assertThat(paths.has("/api/v1/sessions/{id}/teaching/actions")).isTrue();
         assertThat(paths.has("/api/v1/game-versions/{versionId}/teaching-flows")).isTrue();
-        assertThat(paths.has("/api/v1/sessions/{id}/setup")).isFalse();
+        assertThat(paths.has("/api/v1/sessions/{id}/setup")).isTrue();
     }
     @Test void databaseEnforcesFlowVersionAndLessonOwnershipAndLifecycle() {
         var f = fixture(false); var other = fixture(false); UUID id = sessions.create(f.game(), 3, null).session().id();
@@ -355,12 +358,226 @@ class SessionIntegrationTest {
         jdbc.update("INSERT INTO " + schema + ".rule_chunk_embeddings(chunk_id,game_version_id,provider,model,dimensions,embedding) VALUES (?,?,'fixture','preserved',3,'[1,0,0]'::public.vector)", chunk, CATAN_VERSION);
         var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
                 .locations("classpath:db/migration").load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT name FROM " + schema + ".games WHERE id=?", String.class, marker)).isEqualTo("Preserved");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".teaching_sections", Integer.class)).isEqualTo(10);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".teaching_sections", Integer.class)).isEqualTo(21);
         assertThat(jdbc.queryForObject("SELECT normalized_text FROM " + schema + ".rule_documents WHERE id=?", String.class, document)).isEqualTo("Move one space.");
         assertThat(jdbc.queryForObject("SELECT content FROM " + schema + ".rule_chunks WHERE id=?", String.class, chunk)).isEqualTo("Move one space.");
         assertThat(jdbc.queryForObject("SELECT embedding::text FROM " + schema + ".rule_chunk_embeddings WHERE chunk_id=?", String.class, chunk)).isEqualTo("[1,0,0]");
         assertThat(upgrade.migrate().migrationsExecuted).isZero();
+    }
+
+    private SetupStep step(String key, int order) {
+        return new SetupStep(key, order, key + " setup", "Put the original pieces on the table.", List.of("Keep the box nearby."), List.of("Confirm this yourself."));
+    }
+    private TeachingSection trigger(String key, int order) {
+        return new TeachingSection(key, order, "Prepare the table", "Continue to begin setup.", null, null, null, null, true);
+    }
+    private Fixture guided(boolean indexed) {
+        var f = fixture(indexed);
+        setups.publish(f.version(), "Original game setup", List.of(step("FIRST", 0), step("LAST", 1)));
+        return new Fixture(f.game(), f.version(), teaching.publish(f.version(), "Guided lessons",
+                List.of(section("START", 0, null), trigger("PREPARE", 1), section("END", 2, null))));
+    }
+    @Test void genericGuidedJourneyThroughHttpReturnsToSavedLessonThenSameSessionPlaying() throws Exception {
+        var f = guided(false); UUID id = sessions.create(f.game(), 3, null).session().id();
+        assertThat(setups.current(id).stepNumber()).isZero();
+        sessions.navigate(id, GameSession.Action.CONTINUE, 0);
+        var entered = json(request("POST", path(id) + "/teaching/actions", Map.of("action", "CONTINUE", "expectedRevision", 1)), 200);
+        assertThat(entered.path("session").path("stage").asText()).isEqualTo("SETUP");
+        assertThat(entered.path("session").path("completedSections").size()).isEqualTo(1);
+        var first = json(request("GET", path(id) + "/setup", null), 200);
+        assertThat(first.path("step").path("key").asText()).isEqualTo("FIRST");
+        assertThat(first.path("step").path("warnings").get(0).asText()).isEqualTo("Confirm this yourself.");
+        json(request("POST", path(id) + "/setup/complete", Map.of("expectedRevision", 2)), 409);
+        json(request("POST", path(id) + "/teaching/actions", Map.of("action", "CONTINUE", "expectedRevision", 2)), 409);
+        json(request("POST", path(id) + "/setup/previous", Map.of("expectedRevision", 2)), 200);
+        json(request("POST", path(id) + "/setup/repeat", Map.of("expectedRevision", 3)), 200);
+        var last = json(request("POST", path(id) + "/setup/next", Map.of("expectedRevision", 4)), 200);
+        assertThat(last.path("stepNumber").asInt()).isEqualTo(2);
+        json(request("POST", path(id) + "/setup/next", Map.of("expectedRevision", 4)), 409);
+        json(request("POST", path(id) + "/setup/next", Map.of("expectedRevision", 5)), 409);
+        var resumed = json(request("POST", path(id) + "/setup/complete", Map.of("expectedRevision", 5)), 200);
+        assertThat(resumed.path("session").path("stage").asText()).isEqualTo("TEACHING");
+        assertThat(resumed.path("session").path("currentSectionKey").asText()).isEqualTo("PREPARE");
+        assertThat(resumed.path("session").path("setup").path("completed").asBoolean()).isTrue();
+        sessions.navigate(id, GameSession.Action.CONTINUE, 6);
+        sessions.navigate(id, GameSession.Action.PREVIOUS, 7);
+        assertThat(sessions.navigate(id, GameSession.Action.CONTINUE, 8).lesson().key()).isEqualTo("END");
+        assertThat(sessions.navigate(id, GameSession.Action.CONTINUE, 9).readyToPlay()).isTrue();
+        json(request("POST", path(id) + "/setup/restart", Map.of("expectedRevision", 10)), 409);
+        verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
+    }
+    @Test void questionsDuringSetupKeepProgressUseStepContextAndPersistCitations() {
+        var f = guided(true); UUID id = sessions.create(f.game(), 3, null).session().id();
+        setups.act(id, SetupService.Action.START, 0);
+        setups.act(id, SetupService.Action.NEXT, 1);
+        var before = setups.current(id).session();
+        var result = sessions.ask(id, "How do I move this?");
+        assertThat(result.answer().sources()).hasSize(1);
+        assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
+        assertThat(sessions.current(id).session().stage()).isEqualTo(SessionStage.SETUP);
+        verify(llm).generate(argThat(q -> q.input().contains("LAST setup") && q.input().contains("SETUP") && q.instructions().contains("setup instructions are NOT evidence")));
+        verify(embeddings).embed(argThat(q -> q.contains("Current setup step: LAST setup")));
+        assertThat(sessions.history(id, null, 100)).hasSize(2);
+        doThrow(new LlmException(LlmException.Code.LLM_TIMEOUT, "LLM request timed out")).when(llm).generate(any());
+        assertThatThrownBy(() -> sessions.ask(id, "What about now?")).isInstanceOf(LlmException.class);
+        assertThat(setups.current(id).session().revision()).isEqualTo(3);
+        assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
+    }
+    @Test void unsupportedQuestionDuringSetupDoesNotAdvanceAndRestartPreservesHistory() {
+        var f = guided(false); UUID id = sessions.create(f.game(), 3, null).session().id();
+        setups.act(id, SetupService.Action.START, 0);
+        setups.act(id, SetupService.Action.NEXT, 1);
+        assertThat(sessions.ask(id, "Can I fly?").answer().confidence()).isEqualTo(RuleAnswer.Confidence.LOW);
+        var restarted = setups.act(id, SetupService.Action.RESTART, 3);
+        assertThat(restarted.session().setup().completedStepKeys()).isEmpty();
+        assertThat(restarted.step().key()).isEqualTo("FIRST");
+        assertThat(restarted.session().setup().returnSectionKey()).isEqualTo("START");
+        assertThat(sessions.history(id, null, 100)).hasSize(2);
+        setups.act(id, SetupService.Action.NEXT, 4);
+        setups.act(id, SetupService.Action.PREVIOUS, 5);
+        assertThat(setups.current(id).session().setup().completedStepKeys()).containsExactly("FIRST");
+        setups.act(id, SetupService.Action.NEXT, 6);
+        setups.act(id, SetupService.Action.COMPLETE, 7);
+        sessions.navigate(id, GameSession.Action.CONTINUE, 8);
+        var restartedAfter = setups.act(id, SetupService.Action.RESTART, 9);
+        assertThat(restartedAfter.session().setup().returnSectionKey()).isEqualTo("PREPARE");
+        assertThat(restartedAfter.session().completedSections()).containsExactly("START");
+        setups.act(id, SetupService.Action.NEXT, 10);
+        assertThat(setups.act(id, SetupService.Action.COMPLETE, 11).session().currentSectionKey()).isEqualTo("PREPARE");
+    }
+    @Test void newSetupPublicationsAndCatalogDefaultsDoNotRepinSessions() {
+        var f = guided(false); var original = sessions.create(f.game(), 3, null).session();
+        var replacement = setups.publish(f.version(), "Replacement setup", List.of(step("NEW", 0)));
+        assertThat(sessions.create(f.game(), 3, null).session().setup().flowId()).isEqualTo(replacement.id());
+        games.createVersion(f.game(), "Other", "base", "en", null, true, true);
+        assertThat(setups.act(original.id(), SetupService.Action.START, 0).flowId()).isEqualTo(original.setup().flowId());
+        assertThat(setups.current(original.id()).step().key()).isEqualTo("FIRST");
+    }
+    @Test void setupPublicationAndActionsValidateHttpAndOwnership() throws Exception {
+        var f = fixture(false); UUID id = sessions.create(f.game(), 3, null).session().id();
+        String url = "/api/v1/game-versions/" + f.version() + "/setup-flows";
+        assertThat(json(request("GET", path(id) + "/setup", null), 409).path("code").asText()).isEqualTo("SETUP_FLOW_NOT_FOUND");
+        json(request("POST", url, Map.of("name", "Empty", "steps", List.of())), 400);
+        json(request("POST", url, Map.of("name", "Duplicates", "steps", List.of(step("ONE", 0), step("ONE", 1)))), 400);
+        json(request("POST", url, Map.of("name", "Missing", "steps", List.of(Map.of("key", "ONE", "title", "Missing instruction")))), 400);
+        var published = json(request("POST", url, Map.of("name", "Original", "steps", List.of(step("ONE", 0)))), 201);
+        assertThat(json(request("GET", url, null), 200).path("id")).isEqualTo(published.path("id"));
+        json(request("GET", "/api/v1/game-versions/" + UUID.randomUUID() + "/setup-flows", null), 404);
+        json(request("GET", path(UUID.randomUUID()) + "/setup", null), 404);
+        json(request("POST", path(id) + "/setup/start", Map.of()), 400);
+        json(request("POST", path(id) + "/setup/start", Map.of("expectedRevision", -1)), 400);
+        json(request("POST", path(id) + "/setup/restart", Map.of("expectedRevision", 0)), 409);
+        json(request("POST", path(id) + "/setup/start", Map.of("expectedRevision", 0)), 200);
+        json(request("POST", path(id) + "/setup/start", Map.of("expectedRevision", 1)), 409);
+        setups.act(id, SetupService.Action.COMPLETE, 1);
+        sessions.complete(id, 2);
+        json(request("POST", path(id) + "/setup/repeat", Map.of("expectedRevision", 3)), 409);
+        assertThat(json(request("GET", path(id) + "/setup", null), 200).path("session").path("setup").path("completed").asBoolean()).isTrue();
+        var other = guided(false);
+        assertThatThrownBy(() -> jdbc.update("UPDATE game_sessions SET setup_flow_id=? WHERE id=?", sessions.create(other.game(), 3, null).session().setup().flowId(), id))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE game_sessions SET current_setup_step_key='FOREIGN' WHERE id=?", id))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE game_sessions SET setup_return_section_key='FOREIGN' WHERE id=?", id))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+    @Test void triggerAtFinalLessonReturnsToTeachingBeforePlayingForEveryDepth() {
+        var f = fixture(false);
+        setups.publish(f.version(), "Single step", List.of(step("ONLY", 0)));
+        teaching.publish(f.version(), "Single trigger", List.of(trigger("PREPARE", 0)));
+        for (var depth : TeachingDepth.values()) {
+            UUID id = sessions.create(f.game(), 3, depth).session().id();
+            assertThat(sessions.navigate(id, GameSession.Action.CONTINUE, 0).session().stage()).isEqualTo(SessionStage.SETUP);
+            assertThat(setups.act(id, SetupService.Action.COMPLETE, 1).session().stage()).isEqualTo(SessionStage.TEACHING);
+            assertThat(sessions.current(id).readyToPlay()).isFalse();
+            assertThat(sessions.navigate(id, GameSession.Action.CONTINUE, 2).readyToPlay()).isTrue();
+        }
+    }
+    @Test void setupTriggerRequiresConfiguredFlowAndCannotBeDepthSpecific() throws Exception {
+        var f = fixture(false); String url = "/api/v1/game-versions/" + f.version() + "/teaching-flows";
+        assertThat(json(request("POST", url, Map.of("name", "Trigger", "sections", List.of(trigger("SETUP", 0)))), 409).path("code").asText()).isEqualTo("SETUP_FLOW_NOT_FOUND");
+        assertThat(teaching.current(f.version()).id()).isEqualTo(f.flow().id());
+        setups.publish(f.version(), "Setup", List.of(step("ONE", 0)));
+        json(request("POST", url, Map.of("name", "Two", "sections", List.of(trigger("ONE", 0), trigger("TWO", 1)))), 400);
+        json(request("POST", url, Map.of("name", "Skip", "sections", List.of(Map.of("key", "ONE", "order", 0, "title", "One", "explanation", "One", "depths", List.of("DETAILED"), "setupTrigger", true)))), 400);
+    }
+    @Test void duplicateSetupActionsAllowOnlyOneRevisionWinner() throws Exception {
+        var f = guided(false); UUID id = sessions.create(f.game(), 3, null).session().id(); setups.act(id, SetupService.Action.START, 0);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var start = new CountDownLatch(1); var tasks = new ArrayList<Future<Boolean>>();
+            for (int i=0;i<2;i++) { tasks.add(executor.submit(() -> { start.await();
+                try { setups.act(id, SetupService.Action.NEXT, 1); return true; }
+                catch (SessionException e) { assertThat(e.code()).isEqualTo(SessionException.Code.SESSION_CONFLICT); return false; }
+            })); }
+            start.countDown(); int successes=0;
+            for (var task : tasks) { if (task.get(20, TimeUnit.SECONDS)) { successes++; } }
+            assertThat(successes).isEqualTo(1);
+        }
+        assertThat(setups.current(id).session().revision()).isEqualTo(2);
+        assertThat(setups.current(id).step().key()).isEqualTo("LAST");
+    }
+    @Test void setupRestartMakesInflightQuestionStaleWithoutPartialHistory() throws Exception {
+        var f = guided(true); UUID id = sessions.create(f.game(), 3, null).session().id(); setups.act(id, SetupService.Action.START, 0);
+        var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+        doAnswer(call -> { entered.countDown(); assertThat(release.await(20, TimeUnit.SECONDS)).isTrue(); return new LlmResponse("", false, List.of()); }).when(llm).generate(any());
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var question = executor.submit(() -> sessions.ask(id, "How do I move?"));
+            try { assertThat(entered.await(20, TimeUnit.SECONDS)).isTrue(); setups.act(id, SetupService.Action.RESTART, 1); }
+            finally { release.countDown(); }
+            assertThatThrownBy(() -> question.get(20, TimeUnit.SECONDS)).hasCauseInstanceOf(SessionException.class);
+        }
+        assertThat(sessions.history(id, null, 100)).isEmpty();
+        assertThat(setups.current(id).session().revision()).isEqualTo(2);
+    }
+    @Test void v6UpgradePreservesSessionsHistoryAndUserPublishedTeaching() {
+        String schema = "setup_upgrade"; jdbc.execute("CREATE SCHEMA " + schema);
+        var initial = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
+                .locations("classpath:db/migration").target("6").load(); initial.migrate();
+        UUID id = UUID.randomUUID(); UUID custom = UUID.randomUUID();
+        jdbc.update("INSERT INTO " + schema + ".game_sessions(id,game_version_id,teaching_flow_id,player_count,teaching_depth,stage,status,current_section_key,completed_sections,revision,created_at) "
+                + "VALUES (?,?,'00000000-0000-0000-0000-000000000006',3,'STANDARD','TEACHING','ACTIVE','INTRODUCTION','[]',5,CURRENT_TIMESTAMP)", id, CATAN_VERSION);
+        jdbc.update("INSERT INTO " + schema + ".conversation_messages(id,session_id,sequence_number,role,content,created_at) VALUES (?,?,1,'USER','Preserve me',CURRENT_TIMESTAMP)", UUID.randomUUID(), id);
+        jdbc.update("INSERT INTO " + schema + ".teaching_flows(id,game_version_id,name,created_at) VALUES (?,?,'User publication',CURRENT_TIMESTAMP)", custom, CATAN_VERSION);
+        var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema).locations("classpath:db/migration").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        var row = jdbc.queryForMap("SELECT * FROM " + schema + ".game_sessions WHERE id=?", id);
+        assertThat(row.get("revision")).isEqualTo(5L); assertThat(row.get("setup_flow_id")).isNull();
+        assertThat(row.get("current_section_key")).isEqualTo("INTRODUCTION");
+        assertThat(jdbc.queryForObject("SELECT content FROM " + schema + ".conversation_messages WHERE session_id=?", String.class, id)).isEqualTo("Preserve me");
+        assertThat(jdbc.queryForObject("SELECT id FROM " + schema + ".teaching_flows ORDER BY created_at DESC,id DESC LIMIT 1", UUID.class)).isEqualTo(custom);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".setup_steps", Integer.class)).isEqualTo(6);
+        assertThat(upgrade.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test void catanReferenceGuidesAllStepsAndResumesTeachingWithoutPaidCalls() {
+        UUID id = sessions.create(CATAN, 3, TeachingDepth.QUICK).session().id();
+        var lesson = sessions.current(id);
+        while (!lesson.lesson().setupTrigger()) { lesson = sessions.navigate(id, GameSession.Action.CONTINUE, lesson.session().revision()); }
+        var priorCompletion = lesson.session().completedSections();
+        lesson = sessions.navigate(id, GameSession.Action.CONTINUE, lesson.session().revision());
+        assertThat(lesson.session().stage()).isEqualTo(SessionStage.SETUP);
+        var setup = setups.current(id); assertThat(setup.totalSteps()).isEqualTo(6);
+        while (setup.stepNumber() < setup.totalSteps()) { setup = setups.act(id, SetupService.Action.NEXT, setup.session().revision()); }
+        var resumed = setups.act(id, SetupService.Action.COMPLETE, setup.session().revision());
+        assertThat(resumed.session().currentSectionKey()).isEqualTo("PHYSICAL_SETUP");
+        assertThat(resumed.session().completedSections()).isEqualTo(priorCompletion);
+        lesson = sessions.current(id);
+        while (!lesson.readyToPlay()) { lesson = sessions.navigate(id, GameSession.Action.CONTINUE, lesson.session().revision()); }
+        assertThat(lesson.session().id()).isEqualTo(id);
+        assertThat(lesson.session().setup().completed()).isTrue();
+        verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
+    }
+    @Test void setupPublicationWriteFailureRollsBackWholeFlow() {
+        var f = fixture(false);
+        jdbc.execute("CREATE FUNCTION setup_test_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+                + "IF NEW.step_key='FAIL' THEN RAISE EXCEPTION 'fixture write failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER setup_test_failure BEFORE INSERT ON setup_steps FOR EACH ROW EXECUTE FUNCTION setup_test_failure()");
+        try {
+            assertThatThrownBy(() -> setups.publish(f.version(), "Failing flow", List.of(step("FIRST", 0), step("FAIL", 1))))
+                    .isInstanceOf(org.springframework.dao.DataAccessException.class);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM setup_flows WHERE game_version_id=?", Integer.class, f.version())).isZero();
+        } finally { jdbc.execute("DROP TRIGGER setup_test_failure ON setup_steps"); jdbc.execute("DROP FUNCTION setup_test_failure()"); }
     }
 }
