@@ -34,14 +34,14 @@ Questions must not reset TeachingFlow or SetupFlow progress.
 
 STANDARD teaching depth is the default customer experience.
 
-The product direction is planned behavior. Milestones 0–3 are complete; generated answers,
-teaching, sessions, setup, voice and browser UI are not implemented yet.
+The product direction is planned behavior. Milestones 0–4 are complete and validated with
+provider doubles. Teaching, sessions, setup, voice and browser UI are not implemented yet.
 
 ## Current Milestone
 
-**Milestone 3 — Embeddings + Vector Search (complete and validated)**
+**Milestone 4 — RAG Question Answering (complete and validated with provider doubles)**
 
-Milestone 4 remains unstarted.
+Milestone 5 remains unstarted. Live OpenAI testing for Milestone 3 is deferred.
 
 ## Milestones
 
@@ -49,7 +49,7 @@ Milestone 4 remains unstarted.
 - [x] Milestone 1 — Game + GameVersion Domain
 - [x] Milestone 2 — Rule Documents + Ingestion
 - [x] Milestone 3 — Embeddings + Vector Search
-- [ ] Milestone 4 — RAG Question Answering
+- [x] Milestone 4 — RAG Question Answering
 - [ ] Milestone 5 — Production-Quality RAG
 - [ ] Milestone 6 — Game Sessions + Teaching Flow
 - [ ] Milestone 7 — Guided Setup Integrated with Teaching
@@ -134,7 +134,7 @@ Expected:
 
 ## Milestone 4 — RAG Question Answering
 
-Status: Unstarted. Expected scope only; this documentation update does not implement it.
+Status: Complete and validated with provider doubles. Live provider testing is deferred.
 
 Expected:
 
@@ -281,9 +281,16 @@ The application should be demonstrable without Swagger or Postman.
 - RuleRetrievalService performs version/profile-scoped exact cosine ranking with bounded top-K and traceable source metadata.
 - Retrieval-only REST API, OpenAPI contracts, operational timing logs and deterministic isolated tests without paid calls.
 
-Milestone 4 remains unstarted. No LLM-generated answers, confidence handling, sessions, teaching,
-setup, voice or browser UI were implemented. Work remains on `milestone-3-embeddings`.
-No commit, push, staging operation, or branch change was performed during Milestone 3 work.
+- Provider-neutral LlmClient/request/response contracts and disabled-by-default OpenAI Responses adapter.
+- Dedicated evidence prompt builder, bounded whole-chunk context, strict structured output and validated source citations/quotes.
+- Game question endpoint resolves the active default version and returns an answer with evidence-based HIGH/MEDIUM confidence, or a fixed LOW insufficient-evidence fallback.
+- Empty/weak evidence skips generation; refusal or invalid citations discards generated text. Provider outages retain safe meaningful errors.
+- Unit provider/prompt/confidence tests and isolated real-HTTP/PostgreSQL question pipeline tests, including permitted original Catan input.
+
+Milestone 5 remains unstarted. No reranking, production retrieval evaluation, metadata filters,
+sessions, teaching, setup, voice or browser UI were implemented. Work remains on
+`milestone-4-rag-question-answering`. No commit, push, staging operation or branch change was
+performed during Milestone 4 work. Live OpenAI testing for Milestone 3 remains deferred.
 
 ## Major Architectural Decisions
 
@@ -313,7 +320,12 @@ they do not change the implementation status of the completed catalog/ingestion 
 - Provider calls happen outside database transactions. A short locked transaction persists the complete generated batch atomically and handles concurrent duplicate indexing idempotently. Concurrent callers can still incur duplicate provider costs before persistence.
 - Indexing is explicit and synchronous, bounded by document chunk count and per-input characters. Existing imports are preserved and remain unindexed until requested. Ingestion does not call a provider.
 - Embedding configuration defaults to disabled; blank legacy provider/model/dimensions values retain safe defaults. An enabled provider requires a key. OpenAI HTTP requests have a fixed endpoint, no redirect following and bounded timeouts; errors never include upstream bodies or credentials.
-- Retrieval returns chunks, source metadata and cosine scores only. Scores are not answer confidence; LLM answering and confidence handling belong to later milestones.
+- The retrieval endpoint returns chunks, source metadata and cosine scores only. The separate question endpoint adds evidence-grounded generation and baseline confidence; similarity scores are not calibrated factual probabilities.
+- Stateless questions resolve the game's active default once per request. All supplied evidence and citations belong to that version. Sessions/conversation history remain Milestone 6; no new migration or dependency is required for Milestone 4.
+- The prompt builder keeps trusted instructions separate from JSON-encoded untrusted questions/documents. It requests evidence-only answers, exact supporting quotes and explicit insufficiency; bounded whole chunks preserve retrieval order.
+- LLM-generated citation IDs and quotes are checked against the exact prompt evidence. Public source metadata always comes from storage. Unknown/excluded sources, invented quotes, duplicate citations, weak cited evidence or model refusal produce the fixed LOW fallback with no sources.
+- `boardgame.answer.*` gates default to 0.5 minimum and 0.8 HIGH. Generation requires usable evidence; accepted confidence uses the weakest cited score plus model-reported sufficiency. These are baseline answer acceptance heuristics, not Milestone 5 retrieval filtering or validated probabilities.
+- The opt-in LLM adapter uses Responses strict structured outputs, temperature 0, bounded tokens, `store=false`, fixed HTTPS, no tools/redirects/retries and safe errors. Both providers default to disabled. External calls run outside DB transactions; timing logs omit text/keys. Legacy `AI_*` and proposed retrieval threshold settings remain reserved.
 
 ### Multi-Game Architecture
 
@@ -372,6 +384,19 @@ The Phase 5 UI is a lightweight demonstration/testing interface.
 It must remain thin and reuse backend application logic.
 
 ## Validation
+
+### Milestone 4
+
+Validation on 2026-10-07 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
+
+- The first unit run exposed a fixture using an unsaved GameVersion without an ID; the fixture was corrected. A subsequent full run passed all 137 unit tests and 42/51 integration tests; nine new integration cases failed while replacing an existing Mockito answer with `when`, which invoked the prior answer with a null matcher argument. Provider doubles were corrected to use `doAnswer`/`doReturn`/`doThrow`. The final passing full run below supersedes these intermediate fixture failures.
+- Final `gradlew.bat check bootJar --no-daemon --console=plain` — PASS. All 188 tests passed: 137 unit and 51 PostgreSQL/pgvector integration tests, zero failures/errors/skips. Executable JAR rebuilt successfully. Existing Milestone 0–3 migration, ingestion, catalog and retrieval tests continue to pass.
+- Local HTTP provider-contract tests cover structured schema, fixed low randomness, nonstored requests, output message parsing, refusal, malformed/incomplete envelopes/contracts, safe HTTP/rate-limit/timeout failures, disabled/blank legacy configuration, startup bounds, immutable contracts and redacted diagnostics.
+- Application unit tests cover confidence boundaries, weakest cited score, empty/weak evidence avoiding generation, refusal, invented/excluded IDs or quotes, duplicate citations, provider errors, question limits, JSON-escaped prompt-injection text, whole-chunk context budgets and cross-version rejection.
+- Real HTTP/PostgreSQL tests cover active default resolution, traceable cited answers, another game/edition exclusion, default changes between stateless requests, empty indexes without provider calls, weak evidence, unsupported questions, injected documents with invented citations, embedding/LLM errors, missing/inactive/unconfigured games, validation, OpenAPI and the seeded Catan version with an original narrow test paraphrase rather than a copied commercial source.
+- Tests use local provider HTTP fixtures and isolated Testcontainers databases. No paid calls or real API keys are required. The existing Compose database, `.env`, local services and user data are not changed.
+- Live OpenAI testing for Milestone 3 remains deferred. Milestone 4 live interoperability and generated-answer quality are also deferred; automated tests establish contracts/orchestration rather than live-model semantic quality.
+- `git diff --check` — PASS. AGENTS.md, PROJECT_SPEC.md, prior migrations and build dependencies are unchanged. Changes remain unstaged and uncommitted on `milestone-4-rag-question-answering`; no branch change or push occurred. Milestone 5 remains unstarted. README includes opt-in manual question testing and its costs/limitations.
 
 ### Milestone 3
 
@@ -438,10 +463,11 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining Milestone 3 acceptance blockers are known. Docker/WSL is working. Milestone 4 remains unstarted.
+- No remaining automated Milestone 4 acceptance blockers are known. Docker/WSL is working. Milestone 5 remains unstarted; live provider validation remains deferred.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
-- Catalog, rule import, indexing and retrieval are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; there is no deduplication yet.
+- Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; there is no deduplication yet.
 - Live provider interoperability and semantic quality were not tested with a real API key. Tests establish the HTTP contract and deterministic database retrieval; they do not measure real-model relevance. Provider token limits can still reject text because local bounds count characters, not tokens.
+- Live OpenAI testing for Milestone 3 is explicitly deferred, as requested; Milestone 4 live testing is likewise deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates are uncalibrated baseline heuristics; real-model relevance/grounding evaluation remains future work.
 - Indexing is synchronous and calls the provider per pending chunk. A failed batch stores no new vectors but already completed provider requests may still incur costs. Exact search and synchronous indexing will need revisiting for larger datasets; no ANN index or background worker is included.
 - JDK 21 is now installed and machine-level `JAVA_HOME` and PATH are configured correctly. This existing Codex session retained the old environment; validation loaded the installed `JAVA_HOME` into the process explicitly. Open a fresh PowerShell window or restart Codex to inherit the updated environment. The earlier portable tooling/cache remains outside the repository at `D:\Projects\.bootstrap-tools`.
 
