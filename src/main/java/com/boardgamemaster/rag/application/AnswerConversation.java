@@ -16,13 +16,16 @@ public record AnswerConversation(UUID sessionId, String game, String edition, St
         return retrievalQuery(question, 4000);
     }
     public String retrievalQuery(String question, int limit) {
-        // Preserve the question. Bound each cue so a long instruction cannot crowd out all other topics.
+        // Preserve the current question and prioritize the user's prior topic over authored guidance.
         String previous = recentMessages.reversed().stream().filter(m -> m.role().equals("USER")).map(Turn::content).findFirst().orElse("");
-        String cues = (setup == null ? "" : "\nCurrent setup step: " + prefix(setup.title(), 160)
-                + "\nSetup instruction: " + prefix(setup.instruction(), 800))
-                + "\nPrevious question: " + prefix(previous, 400)
+        // A short follow-up needs topic cues, not an embedding dominated by a long setup procedure.
+        // This is a language-independent length heuristic, not semantic reference resolution.
+        int guidanceLimit = !previous.isBlank() && question.codePointCount(0, question.length()) <= 80 ? 120 : 800;
+        String cues = "\nPrevious question: " + prefix(previous, 400)
+                + (setup == null ? "" : "\nCurrent setup step: " + prefix(setup.title(), 160))
                 + "\nCurrent lesson: " + prefix(lessonTitle, 160)
-                + "\nLesson explanation: " + prefix(lessonExplanation, 800);
+                + (setup == null ? "" : "\nSetup instruction: " + prefix(setup.instruction(), guidanceLimit))
+                + "\nLesson explanation: " + prefix(lessonExplanation, guidanceLimit);
         int available = Math.max(0, limit - question.length());
         return question + prefix(cues, available);
     }

@@ -1,179 +1,92 @@
 # Board Game Master
 
-Board Game Master is an AI-powered assistant for board game cafés. Its goal is to teach customers how to play a selected game, guide physical setup, and stay available during gameplay for rule questions.
+[![Java CI](https://github.com/nataliachs/board-game-master/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nataliachs/board-game-master/actions/workflows/ci.yml)
 
-The platform is designed to support multiple board games. Catan is used as the initial reference implementation and test dataset.
+This is my Java/Spring Boot project for a board game assistant that teaches the rules,
+walks players through setup, and stays available for questions during the game. The aim is
+for someone to choose a game and learn it step by step, without already knowing what to ask.
+
+The backend supports multiple games. Catan is the initial reference dataset; game rules,
+teaching content and setup steps are stored as data rather than built into shared services.
+
+[Try it locally](#local-setup) · [Engineering decisions](#why-i-built-it-this-way) ·
+[Tests and CI](#running-database-application-and-tests) · [Demo recording guide](docs/DEMO.md)
+
+![The browser demo: choose a game, player count and teaching depth before starting.](docs/images/browser-demo.jpg)
+
+*The actual local start screen. Teaching and setup work without an AI key; cited answers and
+speech are optional integrations. The screenshot comes from an existing local catalog;
+a fresh database includes Catan reference content.*
 
 ## Current state
 
-**Milestones 0–8 are implemented and validated with provider doubles.**
-A limited user-run live OpenAI Lantern Trail walkthrough passed on 2026-10-08; broader live
-quality evaluation remains deferred. See [the recorded evidence and limitations](docs/DEVELOPMENT_STATUS.md#user-run-live-openai-walkthrough--2026-10-08).
-The application supports generic Game and GameVersion metadata, registration/read APIs,
-default-version selection, and player-count validation. Catan has one seeded reference
-version (5th Edition / English). Permitted UTF-8 text/Markdown documents can now be imported
-for a specific version and read as ordered, traceable chunks. Explicit embedding indexing and
-version-scoped vector retrieval are implemented with opt-in provider configuration.
-Stateless rule questions resolve the game's active default version; session questions use their
-pinned version. Both return cited answers or a fixed insufficient-evidence fallback. Retrieval now adds metadata filters, thresholds, duplicate
-suppression, a reranking boundary and diagnostics. Milestone 6 adds persistent sessions, version-bound
-TeachingFlow, progressive lessons and bounded conversation context. Milestone 7 adds persisted
-guided setup with teaching interruption/resume. Milestone 8 adds optional speech adapters,
-push-to-talk and a thin browser demo at [localhost:8080](http://localhost:8080/).
-Live speech recognition/synthesis quality remains unverified; no paid calls were made for this implementation.
+Milestones 0–8 are implemented: the game catalog, rule-document import, embeddings and
+retrieval, cited answers, persistent sessions, guided teaching/setup, optional voice and a
+browser demo at [localhost:8080](http://localhost:8080/).
 
-- [Master specification](PROJECT_SPEC.md)
-- [Agent instructions](AGENTS.md)
-- [Development status](docs/DEVELOPMENT_STATUS.md)
+The latest full check passed **483 tests** using mock providers and isolated databases.
+Manual OpenAI walkthroughs covered the fictional Lantern Trail demo and a small set of
+Ticket to Ride questions. The latest citation retest passed, but this is not a broad accuracy
+benchmark. Relevance and answer-support review remain experimental; live speech quality and
+broader RAG evaluation still need testing. See [development status](docs/DEVELOPMENT_STATUS.md)
+for the results, failed cases and remaining limitations.
+
+Catan has seeded metadata for an English 5th Edition version and introductory teaching/setup
+content. Its commercial rulebook is not bundled or indexed. Rule questions require permitted
+source documents, generated embeddings and explicitly enabled AI providers.
+
+- [Product requirements](PROJECT_SPEC.md)
 - [Architecture and profiles](docs/ARCHITECTURE.md)
+- [Development status and test history](docs/DEVELOPMENT_STATUS.md)
+- [Coding-agent instructions](AGENTS.md)
 
-## Product experience
+## How it works
 
-The teaching → guided setup → resumed teaching → playing journey is implemented through the
-browser demo as well as the backend APIs and Swagger. The browser uses the same backend
-services, with optional voice and independently usable text input.
+1. Choose a game, player count and teaching depth.
+2. Learn the objective, components and rules in short lessons.
+3. Follow the setup steps, then return to the saved lesson.
+4. Start playing and keep asking questions in the same session.
 
-## Customer Experience
+Players can go back, repeat an explanation, review rules or ask a question without losing
+their place. QUICK, STANDARD and DETAILED control explanation depth; STANDARD is the default.
+The backend owns the TEACHING, SETUP, PLAYING and COMPLETED stages. Setup completion records
+the player's confirmation; the application cannot inspect the physical board.
 
-The intended customer journey is:
+Teaching and setup use authored, version-bound content. Questions use retrieval-augmented
+generation (RAG) over imported rule documents. Lesson text and previous answers are context,
+not substitutes for rule evidence. The LLM does not decide workflow state or the next lesson.
 
-1. Select a board game.
-2. Select the number of players.
-3. Choose how detailed the explanation should be.
-4. Start a Game Master session.
-5. Learn the game objective.
-6. Learn the important components.
-7. Follow guided physical setup.
-8. Learn the core rules.
-9. Learn how turns work.
-10. Ask clarification questions at any point.
-11. Begin playing.
-12. Ask the Game Master rule questions whenever needed.
+## Rule questions
 
-The product is designed to feel like:
+The normal pipeline is:
 
-> A Game Master that teaches you the game and then stays with you while you play.
+Question → Resolve ruleset → Embed query → Retrieve and rank rule chunks → Generate answer
+→ Validate citations → Return answer and sources.
 
-It is not intended to function primarily as an open-ended chatbot.
-
-## Teaching Experience
-
-Teaching is progressive rather than delivered as one large explanation.
-
-The backend tracks TeachingFlow state so customers can:
-
-- continue
-- go back
-- repeat an explanation
-- ask a clarification question
-- resume learning afterward
-
-Questions use Retrieval-Augmented Generation (RAG) against imported, permitted rule documents.
-Live answering requires indexed documents and explicitly enabled embedding/LLM providers.
-Teaching and setup instructions alone are not indexed rule evidence.
-
-## Guided Setup
-
-Setup is integrated into the teaching experience.
-
-The backend tracks setup state independently from the LLM through version-bound authored steps.
-
-Customers follow authored steps and confirm completion before returning to the saved teaching
-lesson. The application records their confirmation; it cannot inspect the physical board.
-Legacy teaching flows without a setup trigger retain their earlier behavior.
-
-## During the Game
-
-Once teaching finishes, the same GameSession transitions into gameplay mode.
-
-The Game Master remains available for questions such as:
-
-- "What can I do on my turn?"
-- "Can I trade now?"
-- "What happens when I roll a seven?"
-- "How many cards do I discard?"
-
-Answers are grounded in the configured GameVersion's rule documents and provide source references when available.
+Session questions use the GameVersion pinned when the session was created. Stateless questions
+resolve the game's current active default. Source references identify the document, section and
+page when available. Missing or weak evidence returns a LOW-confidence fallback rather than a
+guess. Exact quotes establish where an answer came from; they do not by themselves prove it
+is correct. Optional query rewriting and evidence review are described below.
 
 ## Architecture
 
-The project uses a modular Spring Boot backend.
+The project is a modular monolith. Game and GameVersion identify a game and its ruleset;
+RuleDocument and RuleChunk preserve imported evidence. GameSession stores progress and
+conversation messages, while TeachingFlow and SetupFlow define the ordered content.
 
-Core concepts include:
+Provider interfaces separate embeddings, answer generation and speech from the application.
+The browser UI uses the same backend services as Swagger and the REST API.
 
-- Game
-- GameVersion
-- RuleDocument
-- RuleChunk
-- GameSession
-- ConversationMessage
-- TeachingFlow
-- TeachingSection
-- SetupFlow
-- SetupStep
+### Why I built it this way
 
-AI integrations are kept behind provider abstractions.
-
-The project uses PostgreSQL with pgvector installed. Rule-document storage and semantic
-retrieval, cited answer generation, sessions, teaching, guided setup, optional voice and the browser demo are implemented.
-
-## RAG
-
-Rule questions follow a Retrieval-Augmented Generation pipeline:
-
-Customer Question
-
-→
-
-Load GameSession
-
-→
-
-Resolve GameVersion
-
-→
-
-Create Query Embedding
-
-→
-
-Retrieve Relevant RuleChunks
-
-→
-
-Rank Evidence
-
-→
-
-Provide Evidence to LLM
-
-→
-
-Generate Grounded Answer
-
-→
-
-Return Answer + Sources
-
-Session questions load the pinned GameVersion and bounded context; the stateless question
-endpoint resolves the current active default without loading a session. Empty or weak evidence
-can return the fixed LOW-confidence fallback without generation.
-
-The system should prefer saying it cannot confidently verify a rule rather than inventing one.
-
-## Teaching depth and session stages
-
-Choose QUICK, STANDARD or DETAILED; STANDARD is the default café experience. These are
-explanation depths within the same Game Master session. The normal journey is:
-
-Select Game → Player Count → Teaching Depth → Create Session → Teaching → Guided Setup
-→ Continue Teaching → Ready to Play → In-Game Rule Q&A → Completed.
-
-Customers normally select Game only. The backend resolves and pins an active default
-GameVersion. Application-managed TEACHING / SETUP / PLAYING / COMPLETED stages and persisted
-lesson/setup positions control progress; the LLM does not decide the next step. TeachingFlow
-chooses what comes next; RAG supplies verified rule evidence. Clarifications preserve both
-lesson and setup progress. The browser provides Review Rules without resetting the session.
+| Decision | Reason and tradeoff |
+| --- | --- |
+| Modular monolith | I keep features in separate packages while deploying one application. This makes transactions and local development straightforward; independent service deployment is outside the current scope. |
+| Version-bound sessions | Each session pins its GameVersion so changing the catalog default cannot silently change the rules halfway through a game. Teaching and setup content belong to that version. |
+| Backend-owned progress | Teaching and setup are persisted workflows. The LLM explains rules, but cannot advance a lesson or mark physical setup complete; players confirm those steps. |
+| Cited answers | Retrieved passages and validated quotations make answers inspectable. Missing evidence produces a fallback. Quote matching checks provenance, while semantic correctness still needs evaluation. |
+| Provider interfaces and a thin UI | Embeddings, generation and speech sit behind interfaces. Thymeleaf reuses application services, and tests can exercise provider behavior without paid calls. Mock tests do not measure live model accuracy. |
 
 ## Architecture and interfaces
 
@@ -210,6 +123,8 @@ UI controllers reuse backend services; templates and JavaScript do not own workf
 
 ## Local setup
 
+### Try teaching and setup without an AI key
+
 Install a JDK 21 and set `JAVA_HOME` to it. A Java 21 Gradle toolchain is required;
 the wrapper pins Gradle 8.14.4 and verifies its distribution SHA-256.
 Install Docker Desktop with a working Linux container engine (on Windows, configure WSL 2).
@@ -222,12 +137,55 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 # Edit .env and set a nonempty POSTGRES_PASSWORD before continuing.
 
+# These process-only overrides keep this walkthrough free of AI provider calls,
+# even if your existing .env enables them.
+$env:EMBEDDING_PROVIDER = 'disabled'
+$env:LLM_PROVIDER = 'disabled'
+$env:STT_PROVIDER = 'disabled'
+$env:TTS_PROVIDER = 'disabled'
+
 docker compose up -d --wait
 .\gradlew.bat bootRun
 ```
 
-On macOS/Linux, create `.env` from `.env.example` only if it does not already exist,
-then use `sh ./gradlew bootRun`.
+On macOS/Linux:
+
+```sh
+test -f .env || cp .env.example .env
+# Edit .env and set a nonempty POSTGRES_PASSWORD before continuing.
+docker compose up -d --wait
+EMBEDDING_PROVIDER=disabled LLM_PROVIDER=disabled STT_PROVIDER=disabled TTS_PROVIDER=disabled \
+  sh ./gradlew bootRun
+```
+
+Open [the browser demo](http://localhost:8080/), choose **Catan**, four players and **STANDARD**,
+and leave **Speak explanations** unchecked. Choose **Start game**, read a lesson, and continue
+to **Start guided setup**. Follow the setup steps, return to the saved lesson, and finish
+teaching to reach PLAYING. Review the rules or end the session from the same page.
+This demonstrates the workflow using introductory content; it is not a complete Catan tutorial.
+
+The [health endpoint](http://localhost:8080/actuator/health) should report `UP`.
+[Swagger](http://localhost:8080/swagger-ui/index.html) is available for exploring the APIs,
+but is not needed for this browser walkthrough. Stop the application with Ctrl+C; use
+`docker compose stop` to stop PostgreSQL while retaining its data.
+
+### Optional AI features
+
+| Feature | What it needs |
+| --- | --- |
+| Authored lessons, guided setup, review and session progress | Local database only; no AI provider or API key |
+| Cited rule answers | Permitted documents imported and indexed for the selected version, plus embedding and LLM providers |
+| Voice questions | Speech-to-text, plus the same indexed rules and answer providers |
+| Spoken lessons and answers | Text-to-speech provider |
+
+AI features can incur provider charges when explicitly enabled. Keep keys on the server and
+out of Git. Use the original [Lantern Trail sample](examples/original-demo-rules.md) for the
+[document-import example](#implemented-rule-document-api), then follow the indexing and
+question examples below. A rulebook is not automatically downloaded or indexed on startup.
+For a recording walkthrough, see [docs/DEMO.md](docs/DEMO.md).
+
+### Configuration details
+
 The default `local` profile reads `.env` automatically; no shell import is needed.
 Use simple unquoted `NAME=value` entries (Java properties syntax), with no `export` or
 variable interpolation in `.env`. Existing environment variables override file values.
@@ -261,8 +219,14 @@ Active configuration:
 | `RAG_SIMILARITY_THRESHOLD` | `0.5`; minimum cosine similarity, finite −1 to 1; blank legacy values use the default |
 | `RAG_CANDIDATE_LIMIT` | `200`; candidates considered before deduplication/reranking, 50–500 |
 | `RAG_DUPLICATE_OVERLAP` | `0.85`; minimum five-word-shingle overlap for contained source ranges, 0.5–1 |
+| `RAG_QUERY_REWRITE_ENABLED` | `false`; optional contextual query rewriting for short session follow-ups; adds up to one LLM call using `LLM_*` settings |
+| `RAG_EVIDENCE_REVIEW_ENABLED` | `false`; experimental answer-only relevance selection and cited-answer support review; adds up to two LLM calls |
+| `RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR` | `0.35`; experimental pool/quote similarity floor, finite 0–1; applies only with review enabled |
+| `RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT` | `12`; candidate passages before relevance selection, 1–20 |
+| `RAG_QUERY_DIAGNOSTICS_LEVEL` | `OFF`; local opt-in `DEBUG` logs effective search-query text and candidate metadata/scores before threshold filtering |
 | `LLM_PROVIDER` | `disabled`; set `openai` to enable answer generation |
-| `LLM_MODEL` | `gpt-4.1-mini`; must support Responses structured outputs and temperature |
+| `LLM_MODEL` | `gpt-4.1-mini` (default), or opt-in `gpt-5.6-luna`; Responses structured outputs |
+| `LLM_REASONING_EFFORT` | `none` (application default); Luna also accepts `low`, `medium`, `high`, `xhigh`, `max`. Other models require `none` and omit the reasoning parameter |
 | `LLM_API_KEY` | Required when the LLM is enabled; private and independent of the embedding key setting |
 | `LLM_TIMEOUT` | `30s`; connect/request timeout, greater than zero and at most 120s |
 | `LLM_MAX_OUTPUT_TOKENS` | `800`; output budget, 128–4096; incomplete output fails safely |
@@ -323,14 +287,19 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 ```
 
 Health should contain `"status":"UP"`. Swagger documents catalog, rules, retrieval, questions,
-sessions, teaching and guided setup operations. The recorded Milestone 7 `check bootJar` run
-passed 279 tests (192 unit, 87 integration) with no failures or skips. This is the existing
-implementation validation, not a fresh run for this README review. See development status
-for the dated evidence and evaluation limitations.
+sessions, teaching and guided setup operations. On 2026-10-09, a fresh
+`check bootJar --rerun-tasks --no-daemon --console=plain` run passed **483 tests**
+(376 unit and 107 integration) with no failures, errors or skips and built the executable JAR.
+This is local validation with mock providers, separate from GitHub Actions or live-model
+evaluation. See development status for the dated evidence and remaining limitations.
 
-The existing GitHub Actions workflow runs `check bootJar` on pull requests targeting `main`,
+The existing [GitHub Actions workflow](https://github.com/nataliachs/board-game-master/actions/workflows/ci.yml)
+runs `check bootJar` on pull requests targeting `main`,
 pushes to `main`, and manual dispatch. New tests are discovered automatically; no OpenAI secrets
 are required. A push to a milestone branch alone does not trigger this workflow.
+The badge at the top tracks `main`; it does not validate uncommitted local changes. Check the
+run for your PR's latest commit before merging. The workflow definition is in
+[ci.yml](.github/workflows/ci.yml).
 
 ## Implemented catalog API
 
@@ -607,9 +576,83 @@ The test writes `build/reports/retrieval-evaluation.json` with per-question diag
 MRR@3 and unsupported-question abstentions. See development status for the actual recorded run.
 Hand-assigned vectors make this a deterministic pipeline regression benchmark; it does not
 measure OpenAI embedding relevance, hallucination rate or production confidence calibration.
-The limited user-run OpenAI walkthrough is recorded in DEVELOPMENT_STATUS.md; broader live quality evaluation remains deferred.
+The limited manual OpenAI walkthrough is recorded in DEVELOPMENT_STATUS.md; broader live quality evaluation is still pending.
+
+For an offline comparison of retrieval and answer thresholds, run:
+
+```powershell
+.\gradlew.bat test --tests '*ThresholdEvaluationTest'
+```
+
+This writes `build/reports/threshold-evaluation.json` with 28 combinations: seven fictional
+question cases against baseline 0.5/0.5, retrieval-only 0.4/0.5, answer-only 0.5/0.4 and
+experimental 0.4/0.4 gates. Only the risk case's score (about 0.431) comes from live
+diagnostic; source text, model answers, other scores and vectors are fixtures. This compares
+real service gate behavior, not embedding relevance or answer quality. Production settings stay
+unchanged. Unsupported-question abstention in this matrix is supplied by the provider double.
+A separate characterization test demonstrates that even baseline gates accept an incorrect answer
+when the model falsely claims sufficient evidence and quotes an irrelevant passage exactly.
+Exact citations establish provenance, not semantic support. These results do not justify lowering
+production thresholds; live labeled retrieval/answer evaluation and validation of the optional
+relevance/answer-support checks remain outstanding.
 
 ## Implemented rule question API
+
+### Optional relevance and answer-support review
+
+The default answer path retains its 0.5 retrieval/evidence gates. To test the experimental review
+path locally, add this to your private `.env` and restart the application:
+
+```dotenv
+RAG_QUERY_REWRITE_ENABLED=true
+RAG_EVIDENCE_REVIEW_ENABLED=true
+RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR=0.35
+RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT=12
+```
+
+Keep the existing `RAG_SIMILARITY_THRESHOLD` and `ANSWER_MINIMUM_EVIDENCE_SIMILARITY` settings.
+When enabled, answer requests use a separate pool with the review floor (0.35 by default), instead
+of these two baseline gates. Ordinary search endpoints keep their baseline threshold. This is an
+explicit experimental acceptance policy, not a calibrated confidence improvement.
+
+After version/profile/metadata filtering, one embedding/search retrieves a bounded, deduplicated
+pool. A model selects only supplied chunk IDs relevant to the original question and contextual
+action. Selected passages enter generation; the existing exact quote, supplied-ID and version
+checks still run, including at most one quote correction. A second review then checks whether
+the **validated cited quotes alone** support every answer claim and whether the answer addresses
+the current question. Uncited rule passages are excluded from that support check. Original cosine
+scores are preserved; accepted reviewed answers are capped at MEDIUM.
+
+Selection refusal, unknown/duplicate IDs, no relevant evidence, oversized review input or a safe
+provider error returns LOW. A rejected support check also returns LOW; it never repairs or fabricates
+an answer. Logs show `Evidence relevance review completed` and `Cited answer support review completed`
+with outcomes/timing, without rule bodies, questions, answers or keys. Fallback reasons include
+`NO_RELEVANT_EVIDENCE` and `ANSWER_SUPPORT_REJECTED`. The existing request ID links these events.
+
+Reviews use the configured `LLM_*` model, effort, token budget and per-call timeout, sharing the
+existing [Responses structured-output adapter](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses).
+They add up to **two paid model calls per question** when you test with OpenAI. With query rewriting
+and quote correction, one question can use up to five LLM calls plus its query embedding; speech
+has separate costs. There is no whole-pipeline timeout or review retry. Review inputs cap selection
+at 32000 and verification at 40000 serialized characters, in addition to the existing prompt budget.
+Candidate limits/budgets can omit necessary rules. Explicit question API top-K/threshold overrides
+can restrict the review pool, not expand it beyond the configured count/floor.
+
+To retest, ask “Can I keep all four?” then “What's the risk?” during the initial ticket setup step,
+expand sources and check whether the actual scoring passage is cited. Also repeat quantity-bound
+questions and an unsupported question. No game-specific answer or scoring rule is hardcoded.
+Mock providers cover lower-scoring source admission and unsupported-answer rejection, but
+**broader live review quality is unverified**. A limited manual walkthrough answered the risk
+follow-up and quantity/return/discard questions, resisted a rule-override instruction and abstained
+on an unsupported phone number. One correct unfinished-ticket answer cited only a general point-loss
+warning for its more precise amount/timing claim: quote-level support remained incomplete.
+Generic prompts now require each amount, calculation, timing, condition and exception to follow
+from actual quoted premises; otherwise generation should choose a precise quote or simplify the
+answer, and review should reject unsupported detail. A subsequent manual retest cited the specific
+Game End deduction rule and resolved that individual citation gap; broad reliability is unverified.
+A reviewer using the same model may repeat its mistakes;
+structured outputs and exact quotes do not guarantee correctness. Turn
+`RAG_EVIDENCE_REVIEW_ENABLED=false` and restart to return to baseline behavior.
 
 `POST /api/v1/games/{gameId}/questions` accepts:
 
@@ -632,6 +675,33 @@ LLM_PROVIDER=openai
 LLM_MODEL=gpt-4.1-mini
 LLM_API_KEY=your-private-api-key
 ```
+
+To optionally use [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+keep the same provider/key settings and change these entries:
+
+```dotenv
+LLM_MODEL=gpt-5.6-luna
+LLM_REASONING_EFFORT=none
+LLM_MAX_OUTPUT_TOKENS=800
+```
+
+The application explicitly defaults Luna to `none`, rather than the model's provider default
+of `medium`. To experiment with reasoning, select an effort such as `low` and consider increasing
+`LLM_MAX_OUTPUT_TOKENS` to `4096` within the application's 128–4096 limit. The
+[output budget includes reasoning and visible answer tokens](https://developers.openai.com/api/docs/guides/reasoning#controlling-costs).
+Higher effort can exhaust this bounded budget or exceed the configured timeout; incomplete output
+returns `LLM_INVALID_RESPONSE` (502), without accepting partial answers or automatically retrying.
+No effort level guarantees better grounding or lower latency. Live Luna quality, cost and latency
+have not been measured. Selecting a model does not itself call OpenAI.
+
+Luna requests send `reasoning.effort` and omit `temperature`, `top_p` and `logprobs` at every
+effort. GPT-4.1 Mini continues to send `temperature=0` without a reasoning parameter. To switch
+back, set `LLM_MODEL=gpt-4.1-mini` and `LLM_REASONING_EFFORT=none`. Unsupported effort values
+or non-`none` effort with another model fail configuration validation. Only the exact Luna alias
+above selects the Luna adapter behavior; other models retain the previous request behavior and
+are not newly validated for compatibility. Restart the application after changing settings.
+Changing this answer model requires no document reimport, embedding reindex or database migration;
+embedding and speech settings remain independent. Keep the actual key in your private environment.
 
 Both embedding and LLM providers are opt-in. Blank legacy LLM settings remain disabled/default.
 Restart after configuration changes. No extra database migration is needed for Milestone 4;
@@ -657,9 +727,24 @@ The dedicated prompt builder keeps trusted instructions separate from JSON-encod
 questions/document data, prohibits invented rules and asks the model to decline unsupported or
 conflicting evidence. Context preserves complete chunks in retrieval order within its serialized
 character budget. Generation uses the [OpenAI Responses structured-output contract](https://developers.openai.com/api/docs/guides/structured-outputs),
-temperature 0, a bounded output budget and `store=false`; no tools or provider-side conversation persistence.
+temperature 0 for GPT-4.1 Mini or explicit reasoning effort without sampling parameters for Luna,
+a bounded output budget and `store=false`; no tools or provider-side conversation persistence.
+Luna reasoning items are validated and discarded; only completed assistant output text supplies
+the structured answer. Refusals return insufficient evidence; malformed/incomplete responses and
+unexpected tool items are rejected. Citation and confidence gates apply identically to both models.
 Session conversation history is stored locally by the application.
 The default [GPT-4.1 mini model](https://developers.openai.com/api/docs/models/gpt-4.1-mini) supports this contract.
+
+The current question is placed after conversation history in the model input. Prompt instructions
+prioritize its explicit quantities, negations and conditions and require a direct answer for the
+current situation. These are prompt safeguards, not semantic validation: a cited answer may still
+misinterpret a question. A user-reported one-after-two follow-up failed live testing; the prompt
+adjustment has mock-provider coverage, and its effect on real-model answers needs a live repeat.
+The prompt also allows direct conclusions from explicit quantities and conditions, including
+limits when choosing items from a fixed initial deal. It requires citations to the actual rule
+wording and forbids supplying missing premises or inventing exceptions. A subsequent user log
+showed `MODEL_INSUFFICIENT_EVIDENCE` despite including the relevant setup passage; this motivates
+the deduction instruction but does not establish that it fixes live generation.
 
 Confidence is a baseline evidence heuristic, not a calibrated probability. With no supplied chunk
 meeting the minimum gate, generation is skipped. The model must also report sufficient evidence;
@@ -766,16 +851,65 @@ the existing safe 503 errors; teaching continues to work.
 lesson, active setup step during SETUP and bounded recent messages. Defaults are `SESSION_RECENT_MESSAGE_LIMIT=8` (2–50) and
 `SESSION_CONTEXT_CHARACTERS=8000` (1000–16000). They are optional additions to a private `.env`;
 omitting them uses defaults. Only whole recent messages within both limits are retained.
-The retrieval query preserves the current question, then adds the active setup title and instruction
-(during SETUP), latest retained user question, lesson title and lesson explanation within the available budget.
-Titles are capped at 160 characters each, instructions/explanations at 800 each and the prior question at 400;
-truncation preserves Unicode boundaries. These topic cues help natural follow-ups such as "Can I just keep two?".
+The retrieval query preserves the current question, then adds the latest retained user question,
+active setup title (during SETUP), lesson title, setup instruction and lesson explanation within the available budget.
+Titles are capped at 160 characters each and the prior question at 400. For questions of at most
+80 Unicode code points with a nonblank prior user question, instruction/explanation cues are capped
+at 120 characters each instead of 800, so verbose authored guidance does not dominate short follow-ups.
+Initial questions without a prior user question and longer questions retain the 800-character cues.
+This is a length heuristic, not semantic reference resolution; short unrelated questions may still
+inherit an irrelevant prior topic. Earlier assistant claims are excluded from retrieval cues.
+Truncation preserves Unicode boundaries. These topic cues help natural follow-ups such as "Can I just keep two?".
 The complete query is capped at
 4000 characters and the configured embedding input limit. The LLM receives structured context plus newly retrieved evidence.
+Optional contextual query rewriting can replace this deterministic query for short session follow-ups:
+
+```dotenv
+RAG_QUERY_REWRITE_ENABLED=true
+```
+
+Keep the existing `LLM_*` settings and restart Spring Boot. No reimport or reindex is needed.
+With an indexed version, a question of at most 80 Unicode code points and retained prior USER
+history, this adds **up to one LLM call** before the normal query embedding and answer generation.
+It uses the same model, reasoning effort, timeout and output budget as answering. This may increase
+cost and latency; timeouts apply per call, not to the entire question pipeline. Quote correction can
+still add its separate answer call. Stateless questions, long questions, initial questions without
+user history and empty indexes skip rewriting. A short already-standalone question may still incur
+the call before the rewriter declines to change it.
+
+The rewriter receives the latest two retained user questions (400 characters each), game/edition,
+stage and authored lesson/setup titles. Earlier assistant claims and authored instructions are
+excluded. It is instructed to clarify references, explicitly expand risk/downside into consequences
+or penalties, and omit unnecessary game-name/edition framing because search already filters by version.
+Consequences may occur later than the current setup/lesson stage. The query must not invent a penalty,
+amount, condition or outcome. Rewritten text is a search cue only: the answer
+generator still receives the **original question** and must cite retrieved source passages.
+The rewrite contract is separate from the answer/citation contract. Refusal, unresolved references,
+invalid/oversized output or a safe provider error retain the deterministic query without rewrite retries.
+No confidence/citation threshold or game/version filter is relaxed. Model-generated queries can still
+misinterpret the user's intent; automated doubles do not establish real retrieval quality.
+
+Look for `Contextual query rewrite completed` with `outcome=APPLIED`, `UNRESOLVED`, `INVALID`
+or a safe LLM error code, followed by the usual retrieval/evidence/fallback events with the same
+`requestId`. These logs omit question, rewrite, history and source text. Set the flag to `false`
+and restart to disable the additional call. Earlier manual live rewrites still failed the risk
+follow-up; the refined consequence-search instructions await live retesting. No paid calls were
+made during implementation.
+
+For a focused local investigation of an applied rewrite that still returns LOW, temporarily set
+`RAG_QUERY_DIAGNOSTICS_LEVEL=DEBUG` and restart. `Rule retrieval query detail` logs the effective
+query (at most 1000 UTF-16 characters, with original length/truncation flag) and up to 500 candidate
+chunk/document IDs, bounded section titles, cosine scores and `passesThreshold`, including rejected
+candidates. It does not print rule bodies, API keys or raw provider responses. **It does print search
+text that may contain private user details**, so keep it local, inspect before sharing and switch
+back to `OFF` afterward. JSON escaping preserves whitespace safely. The flag adds no API calls;
+manually asking a question still uses the configured paid pipeline. This is diagnostic only and
+does not fix retrieval, change ranking or lower thresholds. The first live rewrite retest applied
+successfully but still missed Game End; see DEVELOPMENT_STATUS.md for the recorded limitation.
 Older answers, lesson text and the current setup instruction are untrusted context, never substitutes for source evidence.
 The existing serialized prompt budget also applies and can further remove older context to preserve evidence.
 The limited live walkthrough demonstrated one follow-up; broader live-model understanding remains
-unverified. Setup-specific Q&A has automated provider-double coverage only. Session expansion selection and summarization are not implemented.
+unverified. Setup-specific Q&A has automated mock-provider coverage only. Session expansion selection and summarization are not implemented.
 
 To diagnose a LOW answer, find console events with the same `requestId`: `Rule retrieval completed`,
 `Rule answer evidence`, `Rule answer fallback` and `Rule question completed`. Evidence events identify
@@ -991,8 +1125,8 @@ and retention policies remain future work.
 
 ### Provider-free browser walkthrough
 
-1. From the repository root, start the database with `docker compose up -d --wait`, then run
-   `.\gradlew.bat bootRun`. Keep your existing private `.env`; do not overwrite it with the example.
+1. Follow [Local setup](#local-setup), including its process-only overrides that disable all
+   AI providers. Keep your existing private `.env`; do not overwrite it with the example.
 2. Open [the browser demo](http://localhost:8080/). Select Catan, four players and STANDARD,
    then choose **Start game**. Catalog entries come from the database.
 3. Use **Continue**, **Previous**, **Repeat** or **Explain again**. At the setup lesson,
@@ -1111,7 +1245,7 @@ conversation is stored. TTS failure returns 200 with the saved `message`, `audio
 `audioError`. Synthesis accepts up to 4096 characters; a longer answer keeps its full text and
 returns a structured audio error. Speech HTTP bodies are bounded (64 KiB STT, 4 MiB TTS).
 
-Automated validation uses local HTTP fixtures, provider doubles and disposable databases.
+Automated validation uses local HTTP fixtures, mock providers and disposable databases.
 Synthetic-microphone browser checks verify recording, transcription, audio controls, desktop/mobile
 layout and the full journey; they do not establish real transcription accuracy or intelligible
 speech playback. Live speech testing and broader live RAG evaluation remain deferred.
