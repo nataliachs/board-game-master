@@ -1,22 +1,25 @@
 # Architecture
 
-Root package: `com.boardgamemaster`. The application scans feature packages beneath it.
-Milestone 0 provides `common.config` and `common.exception` infrastructure.
-Milestone 1 adds `game.domain`, `game.application`, `game.infrastructure`, and `game.api`.
-Milestone 2 adds the corresponding `rules` packages for source ingestion and chunk reads.
-Milestone 3 adds `ai` embedding types/adapters and `rag` indexing/retrieval application,
-storage-port, PostgreSQL adapter and DTO HTTP operations.
+Board Game Master is a modular monolith. The root package is `com.boardgamemaster`, with
+packages grouped by feature rather than by technical layer. Each feature adds domain,
+application, infrastructure and API code where it needs them.
 
-Milestone 6 adds `session.domain`, `session.application`, `session.infrastructure` and `session.api`.
-Milestone 7 adds the `setup` domain/application/infrastructure/api packages.
-Milestone 8 adds `ai` speech adapters, `voice` application/API packages and `ui` application/API
-adapters with Thymeleaf templates and static recording/presentation assets.
-`gamemaster` remains a reserved boundary.
-Add domain/application/infrastructure/api subpackages only as each milestone needs them.
-Milestone 4 adds provider-neutral LLM contracts, an opt-in HTTP adapter, a dedicated evidence
-prompt builder and stateless default-version question answering. Milestone 6 reuses this pipeline
-for pinned session rulesets and bounded conversational context. Guided setup is implemented in
-Milestone 7; speech and the browser demo are implemented in Milestone 8.
+| Package | Responsibility |
+|---|---|
+| `game` | Catalog metadata, game versions and default resolution |
+| `rules` | Document import, normalized source text and chunks |
+| `rag` | Indexing, retrieval, prompts, answers and evidence checks |
+| `session` | Persisted progress, teaching content and conversation history |
+| `setup` | Version-bound setup flows and teaching interruption/resume |
+| `ai` | Provider contracts and embedding, LLM and speech adapters |
+| `voice` | Session voice and narration orchestration |
+| `ui` | Thymeleaf pages and browser interaction |
+| `common` | Shared configuration and errors |
+
+`gamemaster` is reserved for a future orchestration boundary. It does not add another service
+layer yet. Text, voice, Swagger and browser pages reuse the existing application services.
+
+## Catalog and version ownership
 
 `Game` represents a logical game; `GameVersion` owns edition, version label, language,
 and default/active flags. UUID ownership is enforced by a database foreign key and scoped
@@ -36,6 +39,8 @@ are translated by feature-scoped advice; database integrity conflicts return a s
 V3 seeds only Catan metadata and one active English 5th Edition default. This is a selected
 reference configuration, not a rulebook, supported rules-Q&A feature, or latest-edition claim.
 Release year is unspecified; no commercial rules content is included.
+
+## Rule documents and chunking
 
 V4 creates `rule_documents` and `rule_chunks`. Documents belong to GameVersion, retaining
 source type, document version/language/reference, sanitized basename, timestamp, cleaned text,
@@ -60,6 +65,8 @@ The feature's advice maps safe errors to the common DTO. URLs remain metadata; s
 never opened. Original CC0 demo content lives in `examples/` and is not automatically imported.
 Duplicate imports create separate documents. PDF and document editing/deletion remain deferred.
 
+## Embedding storage and indexing
+
 V5 adds `rule_chunk_embeddings`, separate from the immutable source chunks. A composite
 chunk/version FK enforces ownership. The primary key identifies chunk + provider + model +
 dimensions, allowing vector spaces to coexist. pgvector dimensions must match stored metadata;
@@ -80,6 +87,8 @@ the short write transaction locks the document and uses conflict-safe inserts. R
 is idempotent for the active profile. Concurrent requests may both pay for generation, but only
 one vector per chunk/profile is stored. Existing vectors remain usable after a failed new batch.
 Indexing is synchronous and defaults to 1000 chunks/document; background jobs remain deferred.
+
+## Retrieval and cited answers
 
 `RuleRetrievalService` validates the version and input, embeds the query, and searches only the
 active provider/model/dimension profile within that version. Empty indexes return no matches
@@ -126,7 +135,9 @@ of every generated claim. Real-model relevance, adversarial robustness and gate 
 remain unverified. Milestone 5 adds deterministic retrieval-only regression evaluation separately
 from generation, not a live-model production-quality benchmark.
 
-The OpenAI adapter uses the Responses API with a strict JSON schema, temperature 0, bounded
+### LLM adapter
+
+The OpenAI adapter uses the Responses API with a strict JSON schema, temperature 0 for GPT-4.1 Mini, bounded
 output and `store=false`. It has a fixed HTTPS endpoint, no redirects, bounded connect/request
 timeouts, no tools and no automatic retries. Raw REST output is read from the output message
 array; refusal becomes insufficient evidence and malformed/incomplete output becomes a safe
@@ -134,8 +145,21 @@ array; refusal becomes insufficient evidence and malformed/incomplete output bec
 of embeddings, disabled by default and accepts blank legacy provider/model values. Timing logs
 contain game/version IDs and durations, not prompts, questions, excerpts, answers or keys.
 
-A limited user-run live OpenAI walkthrough passed on 2026-10-08 (recorded in DEVELOPMENT_STATUS.md).
+Optional `LLM_MODEL=gpt-5.6-luna` sends `reasoning.effort` from `LLM_REASONING_EFFORT`
+(`none` by application default; also `low`, `medium`, `high`, `xhigh`, `max`) and omits sampling
+parameters. Other models retain the existing request behavior and require effort `none`.
+The exact Luna alias selects this behavior; compatibility is not inferred from arbitrary model names.
+The output budget remains 128–4096 and includes reasoning tokens; truncation fails closed.
+Recognized Luna reasoning items with IDs, typed summary arrays and optional completed status are
+discarded, never used as rule evidence or stored as conversation messages. Only completed assistant
+output text supplies the existing strict answer/citation contract. Refusal, unexpected tool output,
+malformed contracts and incomplete responses keep their safe handling. No domain, workflow,
+embedding, speech, database or prompt changes are needed. Live Luna evaluation remains unverified.
+
+A limited manual OpenAI walkthrough passed on 2026-10-08 (recorded in DEVELOPMENT_STATUS.md).
 Broader provider interoperability, grounding and generated-answer quality evaluation remain deferred.
+
+### Retrieval filters and reranking
 
 `RetrievalFilters` carries normalized language, source types, owned document IDs and explicitly
 selected owned EXPANSION document IDs. Filters intersect and cannot alter the selected ruleset.
@@ -168,6 +192,8 @@ Catan fact paraphrases, questions, expected topics/sections and hand-assigned ve
 exercise actual PostgreSQL retrieval with duplicate imports and foreign game/edition decoys,
 without LLM calls. The generated build report includes per-question diagnostics, Recall@3, MRR@3
 and abstentions. A perfect deterministic score proves pipeline regression behavior only.
+
+### Diagnostics and quote correction
 
 HTTP failures share `code`, `message`, UTC `timestamp`, and request `path`.
 MVC advice preserves HTTP status and framework headers; servlet dispatches use the same DTO.
@@ -205,6 +231,8 @@ matched original contiguous source substring, preserving paragraph breaks. Gener
 are limited to 1000 UTF-16 characters. Whitespace-only matches avoid the correction call; source provenance
 still does not establish semantic entailment of the generated answer.
 The HIGH-confidence minimum-length gate uses restored source quotes rather than generated whitespace.
+
+## Database, profiles and tests
 
 Flyway owns schema changes; Hibernate uses `ddl-auto=validate` and open-in-view is disabled.
 V1 installs pgvector; V2 creates the catalog schema, V3 seeds reference metadata, V4 adds rules,
@@ -257,12 +285,66 @@ The service is the boundary for a future summarization policy; no summarizer is 
 Session expansion selection is not implemented; existing retrieval defaults exclude expansions.
 
 `AnswerConversation` is a provider-neutral context contract. Retrieval combines the complete
-current question with the current setup title/instruction (during SETUP), latest retained user question and lesson
-title/explanation. Titles are capped at 160 characters each, instructions/explanations at 800 each and the prior
-question at 400, with Unicode-safe truncation. The assembled query respects both the
+current question first, then the latest retained user question, setup title (during SETUP), lesson
+title, setup instruction and lesson explanation. Titles are capped at 160 characters each and the
+prior question at 400. Questions of at most 80 Unicode code points with a nonblank prior user question
+use 120-character instruction/explanation cues; otherwise those cues retain their 800-character caps.
+This length heuristic reduces authored-procedure dominance and prioritizes the preceding user topic
+under tight budgets; it does not identify intent or resolve references semantically, and can include
+irrelevant history for short topic changes. Prior assistant claims remain excluded from retrieval.
+The default path still uses one query embedding and one vector search, without a rewrite-model
+call or game-specific rules. The complete structured answer context is not shortened by this policy.
+With Unicode-safe truncation, the assembled query respects both the
 configured embedding character limit and the 4000-character question limit. This deterministic
 topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.
+
+Optional `RAG_QUERY_REWRITE_ENABLED=true` enables `ContextualQueryRewriter` after ownership,
+filter/profile validation and an existing-index check. Short session questions (at most 80 Unicode
+code points) with retained USER history get at most one `QueryRewriteClient` call; stateless,
+long, no-history and empty-index requests skip it. A separate strict Responses schema supplies
+`query` and `resolved`; it shares the configured LLM's compatible parameters and response envelope
+handling. The last two bounded USER questions, game/edition, stage and authored topic titles are
+untrusted rewrite context, never rule evidence; assistant claims and authored instructions are excluded.
+Instructions explicitly expand risk/downside into consequence or penalty search terms and omit
+unnecessary game/edition framing. They allow consequences later than the current stage without
+asserting an unsupported penalty, amount, condition or outcome. Live effectiveness remains unverified.
+Resolved valid output (at most 1000 UTF-16 characters and within embedding input bounds, without
+control characters) replaces only the embedding/reranking query. Refusal, unresolved/invalid output
+or a safe LLM error fall back to the deterministic query, without rewrite retries. The original
+question/full context still reach answer generation. No schema, citation gate or version filter is
+relaxed; the rewriter cannot change workflow or add source evidence. A model may still distort intent.
+The call uses `LLM_*` settings, adds optional cost/latency and has a per-call timeout; no overall
+pipeline timeout was added. Outcome/timing logs omit query/history text. The provider boundary is
+separate from `LlmClient.generate`, while OpenAI transport/envelope parsing is shared. Disabled
+defaults and mocked providers require no paid calls. Live semantic/quality validation remains pending.
+
+Opt-in local `RAG_QUERY_DIAGNOSTICS_LEVEL=DEBUG` enables the separate
+`com.boardgamemaster.rag.querydiagnostics` logger (default OFF). After vector search and before
+threshold filtering, it records the effective query (1000 UTF-16 character cap, Unicode-safe,
+with original length/truncation flag) and up to 500 candidate IDs, bounded section titles, scores
+and threshold eligibility. JSON escapes control characters. It omits rule bodies and upstream
+responses but deliberately exposes query text; it must be treated as private local debugging.
+No additional provider calls, ranking changes or relaxed evidence gates accompany this logger.
 `RuleAnswerService.askPinned` validates version ownership without resolving the mutable default.
+Optional `RAG_EVIDENCE_REVIEW_ENABLED` (default false) introduces an answer-only candidate policy:
+the configured floor/count (0.35/12, bounded to 0–1 and 1–20) replace baseline retrieval and cited
+similarity gates for that path. Metadata/version/profile filters, deduplication, bounded reranking
+and original scores remain. Ordinary search retains its baseline behavior. `EvidenceReviewClient`
+exposes separate strict selection and support contracts through the existing OpenAI transport.
+`EvidenceReviewService` selects only valid supplied IDs from the budgeted pool before generation.
+After exact source/quote checks and optional quote correction, it checks the answer against only
+validated cited quotes plus budgeted question/context; uncited excerpts are removed. Context is
+reference-resolution data, not rule evidence. Rejected/malformed/error reviews fail closed to LOW.
+Accepted reviewed answers are capped at MEDIUM. No review chooses or changes session state.
+The path adds at most two model calls using the same model/settings, with per-call timeouts and
+no retries or whole-pipeline deadline. Selection/verification JSON is capped at 32000/40000
+characters; pool/budget omissions and correlated same-model errors remain limitations. It does
+not prove semantic entailment or establish calibrated confidence. A limited manual walkthrough
+answered the risk exchange but exposed incomplete quote-level coverage of an amount/timing claim.
+Selection/generation/support instructions now explicitly require quoted premises for each such
+detail, with less specific wording or rejection when support is missing. This prompt refinement
+adds no calls or deterministic semantic validator. A limited manual retest displayed the precise
+scoring citation successfully; broad semantic/citation reliability remains unverified.
 The prompt includes structured session/context data as untrusted reference-resolution context;
 lesson/setup text and past assistant answers never become source evidence. Existing version/profile
 isolation, threshold/deduplication, evidence gates, exact citations and LOW fallback still apply.
@@ -290,8 +372,8 @@ no authentication, and production authorization/history retention policies remai
 Milestone 6 tests cover domain transitions/depth/navigation, bounded structured context, real
 HTTP session/flow/history operations, default/flow pinning, grounded follow-ups, cross-session
 isolation, provider failures, atomic exchange rollback, concurrent navigation/questions and V5
-upgrade preservation. They use isolated PostgreSQL/pgvector containers and provider doubles.
-The limited user-run live walkthrough supplements these automated results; broader quality evaluation
+upgrade preservation. They use isolated PostgreSQL/pgvector containers and mock providers.
+The limited manual live walkthrough supplements these automated results; broader quality evaluation
 remains deferred. Milestone 8 adds the voice and browser boundaries described below.
 
 ## Guided setup (Milestone 7)
@@ -378,7 +460,7 @@ Tests exercise multipart provider contracts using local HTTP fixtures, orchestra
 race handling, HTML flows/history/citations/escaping and disabled-provider teaching. A headless
 desktop/mobile browser walkthrough uses a synthetic microphone and fake providers. Real speech
 recognition, audio intelligibility and broader live RAG quality remain unverified; the earlier
-user-run live OpenAI walkthrough and its limitations are preserved in DEVELOPMENT_STATUS.md.
+manual OpenAI walkthrough and its limitations are preserved in DEVELOPMENT_STATUS.md.
 
 `NarrationService` extends Milestone 8 with spoken authored guidance, independent of STT and RAG.
 A repeatable-read snapshot selects the pinned current lesson (including the shared Explain again

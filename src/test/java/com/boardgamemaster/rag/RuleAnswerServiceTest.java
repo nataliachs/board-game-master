@@ -15,6 +15,45 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class RuleAnswerServiceTest {
+    @Test void rewrittenSearchDoesNotReplaceOriginalQuestionOrBecomeCitableEvidence() throws Exception {
+        String question = "What's the risk?";
+        String query = "What are the consequences of keeping all starting mission cards?";
+        String rule = "Incomplete mission cards subtract their printed values from your final score.";
+        var source = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, rule, "Original rules",
+                RuleSourceType.RULEBOOK, "1", "en", "Original fictional fixture", "Final scoring", 2, 0, 0, rule.length(), .7);
+        var rewriteClient = mock(QueryRewriteClient.class);
+        when(rewriteClient.rewrite(any())).thenReturn(Optional.of(query));
+        var embeddingClient = mock(EmbeddingClient.class);
+        var profile = new EmbeddingProfile("fixture", "test", 3);
+        var vector = new Embedding(List.of(1f, 0f, 0f));
+        when(embeddingClient.profile()).thenReturn(profile);
+        when(embeddingClient.embed(query)).thenReturn(vector);
+        var store = mock(RuleVectorStore.class);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(source));
+        var gateway = new EmbeddingGateway(embeddingClient,
+                new com.boardgamemaster.ai.infrastructure.EmbeddingProperties("disabled", "test", "", 3,
+                        java.time.Duration.ofSeconds(1), 4000, 2));
+        var realRetrieval = new RuleRetrievalService(mock(com.boardgamemaster.rules.application.RuleDocumentService.class),
+                store, gateway, new RetrievalProperties(5), new RuleDuplicateSuppressor(), (q, candidates) -> candidates,
+                new ContextualQueryRewriter(rewriteClient, mapper, new QueryRewriteProperties(true)));
+        var context = new AnswerConversation(UUID.randomUUID(), "Original game", "Edition", "en", 3, "STANDARD", "SETUP",
+                "Choose mission cards", "Keep your chosen mission cards.",
+                List.of(new AnswerConversation.Turn("USER", "Can I keep all four?")));
+        when(llm.generate(any())).thenAnswer(invocation -> {
+            LlmRequest request = invocation.getArgument(0);
+            var data = mapper.readTree(request.input());
+            assertThat(data.path("question").asText()).isEqualTo(question);
+            assertThat(data.path("excerpts").get(0).path("content").asText()).isEqualTo(rule);
+            assertThat(request.input()).doesNotContain(query);
+            return new LlmResponse("Incomplete mission cards subtract points at final scoring.", true,
+                    List.of(new LlmResponse.Citation(source.chunkId(), rule)));
+        });
+        var answer = new RuleAnswerService(games, realRetrieval, prompts, llm, config).askPinned(game, version, question, context);
+        assertThat(answer.sources()).singleElement().satisfies(s -> assertThat(s.quote()).isEqualTo(rule));
+        verify(embeddingClient, times(1)).embed(query);
+        verify(llm, times(1)).generate(any());
+    }
     private final ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
             org.slf4j.LoggerFactory.getLogger(RuleAnswerService.class);
     private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> logs =
@@ -70,6 +109,34 @@ class RuleAnswerServiceTest {
     void weakEvidenceAvoidsGeneration(double score) {
         evidence(List.of(match(score))); assertFallback(answers.ask(game, question)); verifyNoInteractions(llm);
         assertReason("NO_STRONG_EVIDENCE");
+    }
+
+    @ParameterizedTest @CsvSource({
+            "1,No. You must keep at least two mission cards.",
+            "2,Yes. You may keep two of the four mission cards dealt.",
+            "4,Yes. You may keep all four mission cards dealt.",
+            "5,No. Only four mission cards are dealt initially so you cannot keep five from that deal."})
+    void quantityDeductionsUseActualRuleQuotesWithoutAdditionalProviderCalls(int quantity, String expected) throws Exception {
+        // Provider double verifies orchestration/provenance, not the live model's ability to infer an answer.
+        String rule = "At setup deal four mission cards. Choose which of these to keep; keep at least two.";
+        var source = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, rule, "Original rules",
+                RuleSourceType.RULEBOOK, "1", "en", "Original fictional fixture", "Setup", 1, 0, 0, rule.length(), .7);
+        String current = "Can I keep " + quantity + " mission cards from my starting deal?";
+        when(retrieval.search(version, current, null)).thenReturn(new RuleRetrievalService.SearchResult(version,
+                new EmbeddingProfile("fixture", "test", 3), 1, List.of(source)));
+        when(llm.generate(any())).thenAnswer(invocation -> {
+            LlmRequest request = invocation.getArgument(0);
+            assertThat(request.instructions()).contains("direct logical conclusion", "missing premises", "cite the actual rule wording");
+            var data = mapper.readTree(request.input());
+            assertThat(data.path("question").asText()).isEqualTo(current);
+            assertThat(data.path("excerpts").get(0).path("content").asText()).isEqualTo(rule);
+            return new LlmResponse(expected, true, List.of(new LlmResponse.Citation(source.chunkId(), rule)));
+        });
+        var result = answers.ask(game, current);
+        assertThat(result.answer()).isEqualTo(expected);
+        assertThat(result.sources()).singleElement().satisfies(s -> assertThat(s.quote()).isEqualTo(rule));
+        assertThat(result.confidence()).isEqualTo(RuleAnswer.Confidence.MEDIUM);
+        verify(llm, times(1)).generate(any());
     }
     @Test void noEvidenceAvoidsGeneration() {
         evidence(List.of()); assertFallback(answers.ask(game, question)); verifyNoInteractions(llm);

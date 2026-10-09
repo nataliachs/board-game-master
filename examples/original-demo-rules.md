@@ -1,6 +1,8 @@
 # Lantern Trail — Original ingestion demo
 
-This fictional example was written for this repository. It is not a commercial game's rulebook. You may use, modify, and redistribute this example under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
+Lantern Trail is a small fictional game used to demonstrate document import and chunking.
+The rules are original demo content, released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+You may use, modify and redistribute them.
 
 ## Setup
 

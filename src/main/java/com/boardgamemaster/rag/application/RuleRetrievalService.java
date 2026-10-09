@@ -20,15 +20,22 @@ public class RuleRetrievalService {
     private final RetrievalProperties config;
     private final RuleDuplicateSuppressor duplicates;
     private final RuleReranker reranker;
+    private final ContextualQueryRewriter queryRewriter;
 
     public RuleRetrievalService(RuleDocumentService documents, RuleVectorStore store, EmbeddingGateway embeddings, RetrievalProperties config) {
         this(documents, store, embeddings, config, new RuleDuplicateSuppressor(), (query, candidates) -> candidates);
     }
-    @Autowired
     public RuleRetrievalService(RuleDocumentService documents, RuleVectorStore store, EmbeddingGateway embeddings,
             RetrievalProperties config, RuleDuplicateSuppressor duplicates, RuleReranker reranker) {
+        this(documents, store, embeddings, config, duplicates, reranker, null);
+    }
+    @Autowired
+    public RuleRetrievalService(RuleDocumentService documents, RuleVectorStore store, EmbeddingGateway embeddings,
+            RetrievalProperties config, RuleDuplicateSuppressor duplicates, RuleReranker reranker,
+            ContextualQueryRewriter queryRewriter) {
         this.documents = documents; this.store = store; this.embeddings = embeddings; this.config = config;
         this.duplicates = duplicates; this.reranker = reranker;
+        this.queryRewriter = queryRewriter;
     }
     public record Diagnostics(RetrievalFilters filters, double similarityThreshold, int candidateLimit, int candidates,
             int belowThreshold, int duplicatesRemoved, int returned, boolean candidateLimitReached, long elapsedMs) { }
@@ -43,10 +50,30 @@ public class RuleRetrievalService {
     public SearchResult searchContextual(UUID versionId, String question, AnswerConversation conversation) {
         embeddings.validateText(question);
         String query = conversation.retrievalQuery(question, Math.min(4000, embeddings.maxInputCharacters()));
-        return search(versionId, query, null);
+        return searchInternal(versionId, query, null, null, null, question, conversation);
     }
 
     public SearchResult search(UUID versionId, String query, Integer topK, Double threshold, RetrievalFilters requested) {
+        return searchInternal(versionId, query, topK, threshold, requested, null, null);
+    }
+
+    /** Answer-only candidate pool; ordinary search retains its configured threshold. */
+    public SearchResult searchForReview(UUID versionId, String question, AnswerConversation conversation,
+            Integer topK, Double threshold, RetrievalFilters filters, EvidenceReviewService review) {
+        embeddings.validateText(question);
+        String query = conversation == null ? question : conversation.retrievalQuery(question, Math.min(4000, embeddings.maxInputCharacters()));
+        // Explicit API overrides may restrict the experimental pool, never expand its configured bounds.
+        int count = topK == null ? review.candidateCount() : Math.min(topK, review.candidateCount());
+        double floor = threshold == null ? review.candidateFloor() : Math.max(threshold, review.candidateFloor());
+        if (topK != null && (topK < 1 || topK > 50) || threshold != null
+                && (!Double.isFinite(threshold) || threshold < -1 || threshold > 1)) {
+            throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Invalid evidence review search bounds");
+        }
+        return searchInternal(versionId, query, count, floor, filters, question, conversation);
+    }
+
+    private SearchResult searchInternal(UUID versionId, String query, Integer topK, Double threshold,
+            RetrievalFilters requested, String originalQuestion, AnswerConversation conversation) {
         long started = System.nanoTime();
         var version = documents.getVersion(versionId);
         embeddings.validateText(query);
@@ -67,8 +94,12 @@ public class RuleRetrievalService {
         if (!store.hasEmbeddings(versionId, profile, filters)) {
             return result(versionId, profile, limit, filters, minimum, List.of(), 0, 0, 0, started);
         }
+        if (conversation != null && queryRewriter != null) {
+            query = queryRewriter.rewrite(originalQuestion, conversation, Math.min(4000, embeddings.maxInputCharacters())).orElse(query);
+        }
         var vector = embeddings.embed(query.strip());
         var candidates = store.search(versionId, profile, vector, config.candidateLimit(), filters);
+        RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
         var eligible = candidates.stream().filter(m -> Double.isFinite(m.cosineSimilarity()) && m.cosineSimilarity() >= minimum).toList();
         var unique = duplicates.suppress(eligible, config.duplicateOverlap());
         List<RuleVectorStore.Match> ranked;

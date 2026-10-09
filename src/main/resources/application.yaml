@@ -38,6 +38,7 @@ management:
 logging:
   level:
     com.boardgamemaster.rag.quotediagnostics: ${ANSWER_QUOTE_DIAGNOSTICS_LEVEL:OFF}
+    com.boardgamemaster.rag.querydiagnostics: ${RAG_QUERY_DIAGNOSTICS_LEVEL:OFF}
   structured:
     format:
       console: ecs
@@ -66,6 +67,7 @@ boardgame:
   llm:
     provider: ${LLM_PROVIDER:disabled}
     model: ${LLM_MODEL:gpt-4.1-mini}
+    reasoning-effort: ${LLM_REASONING_EFFORT:none}
     api-key: ${LLM_API_KEY:}
     timeout: ${LLM_TIMEOUT:30s}
     max-output-tokens: ${LLM_MAX_OUTPUT_TOKENS:800}
@@ -87,6 +89,12 @@ boardgame:
     similarity-threshold: ${RAG_SIMILARITY_THRESHOLD:0.5}
     candidate-limit: ${RAG_CANDIDATE_LIMIT:200}
     duplicate-overlap: ${RAG_DUPLICATE_OVERLAP:0.85}
+  query-rewrite:
+    enabled: ${RAG_QUERY_REWRITE_ENABLED:false}
+  evidence-review:
+    enabled: ${RAG_EVIDENCE_REVIEW_ENABLED:false}
+    candidate-floor: ${RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR:0.35}
+    candidate-count: ${RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT:12}
   rules:
     chunk-size: ${RULE_CHUNK_SIZE:1200}
     chunk-overlap: ${RULE_CHUNK_OVERLAP:200}

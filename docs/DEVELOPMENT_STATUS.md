@@ -1,50 +1,23 @@
 # Board Game Master — Development Status
 
-## Product Direction
+## Product direction
 
-Board Game Master uses a teaching-first customer experience.
+The main flow is teaching first: select a game, learn the basics, follow physical setup,
+resume teaching, then keep the same session open for rule questions during play. STANDARD
+is the default depth. Questions preserve the current lesson and setup step.
 
-Default flow:
+## Current milestone
 
-Select Game
+**Milestone 8 — Voice + Minimal Demo UI: implemented.**
 
-→
+All nine milestones are implemented. Current follow-up work focuses on answer relevance,
+contextual questions and citation quality. The latest full check passed **483 tests**
+(376 unit and 107 PostgreSQL/pgvector integration tests) with mock providers.
 
-Teaching
-
-→
-
-Guided Setup
-
-→
-
-Continue Teaching
-
-→
-
-Ready to Play
-
-→
-
-In-Game Rule Q&A
-
-Customers may ask clarification questions while learning.
-
-Questions must not reset TeachingFlow or SetupFlow progress.
-
-STANDARD teaching depth is the default customer experience.
-
-Milestones 0–8 are implemented and validated with provider doubles. Sessions, progressive teaching,
-bounded conversational Q&A, guided setup with teaching resume, optional speech and the thin
-browser demo are implemented. Live speech quality and broader RAG evaluation remain unverified.
-
-## Current Milestone
-
-**Milestone 8 — Voice + Minimal Demo UI (implemented; automated validation complete)**
-
-Milestone 8 adds optional voice and the browser demo using existing backend services. The user completed a limited live OpenAI Lantern Trail walkthrough
-on 2026-10-08, exercising Milestones 3, 4 and 6. Broader live-model quality evaluation remains
-deferred; the original automated validation history below is preserved.
+Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
+The latest precise-citation retest passed for the reported exchange. Relevance/support review
+remains experimental; broader accuracy, repeated-run stability and live speech quality are
+still unverified. The dated notes below retain both successful tests and earlier failures.
 
 ## Milestones
 
@@ -57,6 +30,416 @@ deferred; the original automated validation history below is preserved.
 - [x] Milestone 6 — Game Sessions + Teaching Flow
 - [x] Milestone 7 — Guided Setup Integrated with Teaching
 - [x] Milestone 8 — Voice + Minimal Demo UI
+
+The implementation notes and validation history are separate from live-model evaluation.
+Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Portfolio presentation and fresh local check — 2026-10-09
+
+Added an actual screenshot of the running browser start screen, README navigation, engineering
+decisions and tradeoffs, and a quick start with explicit process-only overrides disabling all
+AI providers. Added `docs/DEMO.md` with a short recording guide and a separate optional
+cited-answer segment. No sessions were created or changed while capturing the start screen.
+
+Reviewed the existing GitHub Actions workflow: it runs `check bootJar` on PRs targeting `main`,
+pushes to `main` and manual dispatch, with Java 21 and Docker. No workflow change was needed.
+The README badge links to that workflow and tracks `main`. The public GitHub API returned 404
+for workflow runs, so remote run success could not be verified; the badge is not evidence that
+the current uncommitted working tree passed CI.
+
+Validation: `gradlew.bat check bootJar --rerun-tasks --no-daemon --console=plain` passed with
+376 unit tests and 107 PostgreSQL/pgvector integration tests (483 total, zero failures, errors
+or skips), and built the executable JAR. Tests used mock providers and isolated databases.
+Markdown file links and heading anchors resolve; `git diff --check` passes. The screenshot
+was visually inspected. Existing live walkthrough results and broader evaluation limitations
+remain unchanged. No paid API calls, private `.env` edits, live-database writes, commits or pushes.
+
+## Documentation wording review — 2026-10-09
+
+Reviewed all six Markdown files. Shortened repeated introductions, clarified each document's
+purpose, and rewrote conversational development notes as a test history. Commands, fenced
+examples, demo rules and the recorded live-test results and limitations are unchanged.
+
+Validation: Markdown file links and heading anchors resolve; all existing fenced blocks match
+the pre-edit copies; the demo rules are unchanged; recorded history retains the same numeric
+values. Non-Markdown file hashes are unchanged and `git diff --check` passes. Application tests
+were not rerun for this documentation-only change; the 483-test result above is from the earlier
+implementation check. No paid API calls, database changes, commits or pushes.
+
+## Optional Luna adapter follow-up — 2026-10-08
+
+Scope: optional answer-model support on `feature/luna-model-support`; no new milestone,
+workflow, UI, database migration, embedding or speech change. GPT-4.1 Mini remains the default
+and retains temperature 0 without a reasoning parameter. Providers remain disabled by default.
+
+- Exact model `gpt-5.6-luna` sends Responses `reasoning.effort` and omits sampling parameters.
+  `LLM_REASONING_EFFORT` defaults to `none`; supported Luna values are `none`, `low`, `medium`,
+  `high`, `xhigh`, `max`. Invalid values and non-`none` effort for other models fail startup.
+- Completed responses may contain recognized reasoning items before/after the assistant message.
+  Those items are validated and discarded; only assistant output text enters the existing strict
+  answer/citation contract. Reasoning is not rule evidence or session history. Refusals remain
+  insufficient evidence; incomplete output, invalid contracts and unexpected tools fail safely.
+- Existing strict JSON schema, `store=false`, fixed endpoint, timeout, token budget and citation/
+  confidence validation remain in effect. Output is bounded to 128–4096 tokens including reasoning;
+  higher effort can exhaust this budget or timeout. No automatic retry or model fallback was added.
+- README, architecture notes, application configuration and `.env.example` document switching
+  models, effort, budget limits and rollback. The private `.env` was not read or modified.
+
+Validation: `check bootJar` passed with 263 unit tests and 107 PostgreSQL/pgvector integration
+tests (370 total, zero failures/errors/skips), using local HTTP provider fixtures/doubles and
+disposable databases. After adding four more response edge-case fixtures, the final `test` run
+passed with 267 unit tests. Combined validated coverage is 374 tests (267 unit + 107 integration),
+zero failures/errors/skips. `git diff --check` passed. Production code was unchanged after the
+full build/integration run.
+
+Limitations: no paid API calls or live Luna evaluation. Luna answer quality, grounding, latency,
+cost and practical reasoning budgets remain unverified. Model switching does not resolve the
+previously recorded broader RAG, quote-correction or speech evaluation limitations. Historical
+live OpenAI walkthrough results and earlier test history below are preserved. No commit or push.
+
+## Follow-up question investigation — 2026-10-09
+
+Manual Ticket to Ride browser testing after selecting Luna produced cited answers for
+keeping two initial tickets, returning initial tickets, and keeping five (the last answer had a
+misleading affirmative opening before explaining the initial-deal restriction). A customer-service
+phone-number question returned the expected LOW/no-evidence fallback. After the output budget was increased to 4096, “What if I keep only one?” received “Yes” followed by
+an explanation about keeping two. This is a failed relevance/consistency case despite MEDIUM
+evidence confidence. Actual active model/effort settings and provider telemetry were not independently
+verified from the screenshots; these observations come from manual testing, not a benchmark.
+
+Inspection found that the correct current question was serialized before prior conversation turns.
+The generic prompt now places that question last and explicitly prioritizes its quantities,
+negations and conditions over earlier turns; it asks for a direct answer in the active situation
+and a consistency check between the opening and explanation. No game-specific answers, extra
+provider calls, semantic verifier, confidence calibration or workflow changes were added.
+
+An original fictional-rule regression fixture checks the one-after-two exchange's current question,
+history separation, evidence preservation and quote-correction input. Mock providers verify
+prompt construction and integration only; they cannot establish that a real model follows these
+instructions. A live repeat of this exchange remains pending. Prior live results and broader
+grounding/evaluation limitations remain in effect. `check bootJar` passed with 268 unit tests
+and 107 PostgreSQL/pgvector integration tests (375 total, zero failures/errors/skips), using
+mock providers and disposable databases. `git diff --check` passed. No paid API calls,
+private environment edits, commit or push.
+
+### Explicit quantity deductions — 2026-10-09
+
+After the prompt adjustment, manual testing showed a LOW fallback for “Can I start with five tickets?”.
+The supplied log contains one fallback, requestId `bc397016-2560-4249-89b0-5b7bfad76905`, with
+`MODEL_INSUFFICIENT_EVIDENCE`; five chunks were included, with the setup chunk ranked first
+(similarity approximately 0.647). Questions are not logged, so the screenshot/request mapping
+is inferred from the manual test report. The supplied setup chunk's content
+confirms it specifies an initial deal of four tickets and retaining at least two. This supports
+a generation sufficiency problem for this case, rather than missing retrieval or quote rejection.
+The same log contains a different request with quote correction accepted; it is not the fallback.
+
+The generic prompt now explicitly permits direct conclusions from stated quantities/conditions,
+such as keeping items from a fixed initial deal, while requiring actual supporting rule quotations
+and forbidding missing premises, unstated actions or exceptions. No game-specific production
+rules, relaxed citation checks, retrieval-threshold changes or additional provider calls were added.
+Four original fictional-rule mock-provider cases cover quantities below the minimum, at both
+bounds and above the initial deal. They verify prompt delivery, accepted source provenance and
+one-call orchestration; mock answers do not prove semantic inference by a live model.
+
+Validation: `check bootJar` passed with 272 unit tests and 107 PostgreSQL/pgvector integration
+tests (379 total, zero failures/errors/skips), using mock providers and disposable databases.
+`git diff --check` passed. Live repeat with this deduction instruction,
+broader semantic correctness, model/effort telemetry and previous evaluation limitations remain
+unverified. Historical walkthroughs are preserved. No paid API calls, commit or push.
+
+## Short contextual follow-up retrieval — 2026-10-09
+
+Subsequent user screenshots show successful limited retests of initial quantities (one, two/four,
+five), returning unwanted initial tickets and the unsupported phone-number fallback after the
+quantity prompt change. A later screenshot also shows resistance to an instruction to ignore
+the rules and permit five tickets. Sources were collapsed in screenshots, so citation content,
+unchanged workflow state and actual active model/effort were not independently verified.
+These observations supersede pending live retest for these individual cases only; they do not
+establish broader correctness or calibrated confidence.
+
+The short follow-up “What's the risk?” after keeping all four still returned LOW. The supplied
+log's fallback request `4eec7136-db72-4e51-aa7b-c1b93d6c40b5` shows four prompt chunks and
+`MODEL_INSUFFICIENT_EVIDENCE`, without Game End (question text is not logged, so request mapping
+is inferred). The supplied Draw Tickets content lacks the penalty; separately supplied Game End
+content contains it. This confirms missing relevant evidence in that request, not quote rejection.
+
+Retrieval cues now prioritize the previous user question immediately after the current question,
+then short topic titles before detailed guidance. With a nonblank prior user question and a current
+question of at most 80 Unicode code points, setup instruction and lesson explanation cues are
+capped at 120 characters each instead of 800. No-history initial questions and longer questions
+retain 800-character cues. Existing 400-character prior-question, 160-character title, overall
+embedding-input and Unicode-safe bounds remain. The generator still receives full structured
+context subject to its existing budget. Assistant-generated history is not used in retrieval cues.
+
+This is a deterministic length heuristic, not intent recognition or semantic query rewriting.
+It may carry an irrelevant prior topic into short unrelated questions; it does not guarantee that
+the penalty will rank above threshold. No new provider calls, lower thresholds, additional vector
+searches, game-specific logic or citation relaxations were added. Regression tests cover cue balance,
+tight budgets, no-history/long-question behavior and a single embedding/search via mock providers.
+Validation: `check bootJar` passed with 275 unit tests and 107 PostgreSQL/pgvector integration
+tests (382 total, zero failures/errors/skips), using mock providers and disposable databases.
+`git diff --check` passed. Live risk-follow-up retest and broader retrieval
+quality remain unverified. No paid API calls, private environment/database changes, commit or push.
+
+Manual retest after this change still failed for the risk follow-up. The supplied screenshot
+shows the correct all-four setup answer followed by LOW for “What's the risk?”. Log request
+`9d4a5d13-f2eb-4880-a2ec-e05b4fb99c7f` includes setup, game turn, draw tickets, components and
+draw train cards, with `MODEL_INSUFFICIENT_EVIDENCE`; Game End is absent again. The log records
+16 candidates, 11 below the retrieval threshold and five returned. Given the supplied Game End
+chunk is in this indexed document, it appears to remain below threshold rather than being lost
+to top-K truncation, though its individual score is not logged. The cue-shortening heuristic
+therefore has not solved this live case. Treat it as a failed live retrieval retest despite passing
+automated contracts; no paid calls or further source changes were made for this diagnosis.
+
+## Optional contextual query rewriting — 2026-10-09
+
+Authorized follow-up to the failed short-risk retrieval retest; no new milestone was started.
+`RAG_QUERY_REWRITE_ENABLED` defaults to false. When enabled, indexed session questions of at
+most 80 Unicode code points with retained USER history can make one rewrite call before query
+embedding. Initial/no-history, longer and stateless questions and empty indexes skip it.
+
+`QueryRewriteClient` is a provider-neutral boundary separate from answer generation. The OpenAI
+adapter shares transport/model compatibility and envelope parsing, with a distinct strict
+`standalone_rule_query` schema (`query`, `resolved`). It uses existing `LLM_*` model, reasoning,
+timeout and output settings, `store=false`, no tools, no redirects and no rewrite retries.
+The rewrite receives at most two 400-character prior USER questions, bounded game/edition and
+topic titles, stage and current question. Prior assistant claims and authored instruction bodies
+are excluded. Instructions permit resolving references/searching consequences, but forbid answering,
+inventing facts/outcomes or changing explicit quantities, conditions, game or edition.
+
+Only a resolved, valid query of at most 1000 UTF-16 characters within the embedding limit, without
+control characters, replaces the embedding/reranking query. Refusal, unresolved references,
+invalid output and safe provider failures retain the deterministic query. The generator still
+receives the original question and existing context; rewrites never enter citations or stored
+messages. Existing version/profile/ownership filters, thresholds, evidence gates and workflow
+remain unchanged. Logs report session ID, outcome and timing without question/rewrite/history text.
+
+Enabling can add one paid LLM call and per-call timeout before the usual embedding/answer calls;
+quote correction may independently add its existing answer call. Short standalone questions may
+incur a rewrite call before the rewriter declines to change them. No whole-pipeline timeout or
+semantic validation of the generated search query was added. Live rewrite quality, actual retrieval
+of the missing penalty, latency and cost remain unverified. The preceding cue-shortening live test
+remains failed; this optional path is not claimed to fix it until a new manual live retest.
+
+Mock-provider coverage includes separate Responses contracts for Mini/Luna, refusals/malformed
+rewrite output, disabled/long/no-history skip paths, empty-index skip, provider-error fallback,
+single embedding/search orchestration and original-question/source preservation through generation.
+Validation: `check bootJar` passed with 295 unit tests and 107 PostgreSQL/pgvector integration
+tests. After adding the original-question-through-generation regression fixture, the final `test`
+run passed with 296 unit tests. Combined validated coverage is 403 tests (296 unit + 107 integration),
+zero failures/errors/skips. Production code was unchanged after the full build/integration run.
+`git diff --check` passed. README, architecture notes and `.env.example` document opt-in,
+diagnostics, cost and rollback. The private `.env` and database were not changed. No paid calls,
+commit or push were made.
+
+### First live rewrite retest and local diagnostics — 2026-10-09
+
+The screenshot and log from manual testing still show LOW for the risk follow-up. Request
+`d2cf914d-d2e3-4ce3-9c16-a5d8684d6bb9` reports rewrite `APPLIED` (~2336ms), then 16 candidates,
+12 below threshold, four returned: introduction, components, setup and game turn. Game End is
+absent; the answer fallback is `MODEL_INSUFFICIENT_EVIDENCE`. The introduction ranks first at
+approximately 0.685. Rewriting executes but has not solved this live retrieval case. The log
+does not contain the generated query or Game End's score, so query quality and its exact rejection
+score cannot yet be assessed. This supersedes pending live testing for execution of the optional
+path only; its quality remains failed/unverified and earlier evaluation limits remain in effect.
+
+Added default-OFF local diagnostics via `RAG_QUERY_DIAGNOSTICS_LEVEL=DEBUG`: effective query
+(at most 1000 UTF-16 characters with length/truncation flag) and candidate IDs/section titles/
+scores/threshold eligibility before filtering (at most 500 candidates). Rule bodies, raw provider
+responses and keys are not included. Query text may contain private user data, so documentation
+instructs local use, review before sharing and turning it OFF afterward. This adds no provider
+calls and makes no ranking, prompt or threshold changes. It diagnoses the unresolved failure;
+it is not another claimed fix. Tests cover off-by-default behavior, rejected-candidate visibility,
+no rule-body logging, JSON escaping and Unicode/candidate bounds. `check bootJar` passed with
+299 unit tests and 107 PostgreSQL/pgvector integration tests (406 total, zero failures/errors/skips),
+using mock providers and disposable databases. `git diff --check` passed.
+No paid calls, private environment/database changes, commit or push.
+
+Further manual-test diagnostics, request `f24ef4b2-86e1-44b2-bff3-cf93a49d371c`, show the
+applied rewrite asked about the risk of keeping all four starting Destination Tickets with game
+name/setup framing. It did not expand risk into consequences/penalties. Only the introduction
+passed the 0.5 retrieval threshold (~0.583). Game End ranked ninth at ~0.443 and was rejected;
+the answer fallback was again `MODEL_INSUFFICIENT_EVIDENCE`. The stored passage and indexing
+exist, but this query's ranking/threshold combination fails to supply the necessary evidence.
+Increasing top-K alone would not bypass the threshold; lowering only retrieval threshold would
+also leave the independent 0.5 answer gate in effect. These are observed diagnostic results,
+not evidence that the threshold should be globally lowered. No additional implementation or
+paid calls were made for this log analysis. Live retrieval quality remains unresolved.
+
+### Consequence-search rewrite instructions — 2026-10-09
+
+Following the diagnostic failure above, the generic rewriter prompt now explicitly expands
+risk/downside into possible consequences or penalties rather than repeating the vague word.
+It requests short content-focused queries without unnecessary game/edition framing, since search
+already filters by version. It distinguishes the current action's stage from when consequences
+could occur, and forbids inventing a penalty, amount, completion condition or outcome. A fictional
+mission-card example illustrates wording only; no Ticket to Ride rule or answer was hardcoded.
+
+This change affects rewrite instructions only. Thresholds, source/citation validation, call counts,
+provider settings and deterministic fallback are unchanged. Two mock-provider cases check prompt
+delivery and returned search cues for risk/downside; they do not establish live model compliance
+or improved ranking. README and architecture notes describe the refinement and pending retest.
+
+Validation: `check bootJar` passed with 301 unit tests and 107 PostgreSQL/pgvector integration
+tests (408 total, zero failures/errors/skips), using mock providers and disposable databases.
+`git diff --check` passed. Live retrieval of the missing Game End passage and broader evaluation
+remain unresolved; earlier live successes and failures are preserved. No paid API calls, private
+environment/database changes, commit or push.
+
+### Offline threshold and evidence-gate evaluation — 2026-10-09
+
+Manual retest request `39f2a28f-bff0-4ffc-b163-2323b588273d` applied the refined rewrite:
+“What consequences or penalties can result from keeping all four starting destination tickets?”
+Game End improved to rank two, but its similarity was 0.43110639678163876, below 0.5.
+All 16 candidates were rejected and the fallback was `NO_RETRIEVED_EVIDENCE`; no answer-model
+call occurred for this request. The screenshot still shows LOW. The prompt refinement therefore
+did not resolve the live failure, even though it improved the relevant passage's rank.
+
+Added `ThresholdEvaluationTest`, an offline comparison through real retrieval/prompt/answer services
+with provider/store doubles. Seven fictional question cases (quantity bounds, returned cards, risk,
+unsupported phone number) exercise four gate pairs: 0.5/0.5, 0.4/0.5, 0.5/0.4, 0.4/0.4. Only
+the risk score above is replayed from a live log; other scores, vectors, source text and answers
+are synthetic. The 28-case report is `build/reports/threshold-evaluation.json`. It is not a
+semantic-quality benchmark, a measured improvement or a threshold calibration dataset.
+
+Results: either 0.5 gate blocks the 0.431 risk fixture. Lowering both gates admits it and accepts
+the double's cited answer. Strong fixture cases remain accepted; the unsupported case abstains
+only because its provider double reports insufficient evidence. A separate characterization
+test confirms the current gap: an invented phone number with an exact but irrelevant rule quote
+can be accepted even at baseline thresholds. Provenance checks do not verify semantic entailment.
+No automatic relevance verifier was implemented and no production thresholds were changed.
+Lowering both gates is not recommended on this evidence; labeled live cases and relevance/answer
+support evaluation remain necessary. Existing live walkthrough history and limitations are preserved.
+
+Validation: the focused evaluation passed all 29 tests. `check bootJar` passed with 330 unit
+tests and 107 PostgreSQL/pgvector integration tests (437 total, zero failures/errors/skips).
+`git diff --check` passed. The initial sandboxed Gradle run could not connect to its local daemon;
+rerunning outside the sandbox succeeded. No paid API calls, private environment/database changes,
+commit or push.
+
+### Optional relevance selection and cited-answer support review — 2026-10-09
+
+Added an opt-in experimental answer path, `RAG_EVIDENCE_REVIEW_ENABLED=false` by default.
+It uses a separate candidate floor/count (0.35/12 defaults; finite 0–1 and 1–20 bounds) after
+version/profile/metadata checks, deduplication and bounded ranking. This explicitly replaces the
+baseline similarity gates for reviewed answers only; ordinary search/default answers are unchanged.
+Explicit API top-K/threshold overrides can restrict this pool. Original scores are never inflated.
+
+Provider-neutral `EvidenceReviewClient` has two strict contracts through the shared Responses
+adapter: relevant supplied chunk IDs, and a boolean cited-answer support decision. Mini and Luna
+retain their existing compatible request parameters. Selection runs over budgeted original
+question/context/excerpts before generation. It cannot add source text or unknown/duplicate IDs.
+After existing ID/version/exact-quote checks and optional quote correction, verification receives
+the original question, budgeted context, proposed answer and validated cited quotes only, with
+uncited excerpts removed. Context is not rule evidence. It checks relevance, quantities, stage,
+contradictions and support for every claim. Rejected/refused/invalid/error reviews return LOW;
+successful reviewed answers are capped at MEDIUM. Workflow, UI, database and milestone are unchanged.
+
+Reviews add at most two LLM calls using existing model/effort/output/timeout settings. Alongside
+optional rewriting, generation and quote correction, a question can use five LLM calls plus an
+embedding; speech is separate. No review retries or overall deadline were added. Review input
+caps are 32000/40000 characters. Logs contain outcomes/counts/timing and safe error codes only.
+README, architecture, application configuration and `.env.example` document opt-in, rollback and
+cost/latency. The private `.env` was not read or changed and the live database was not modified.
+
+Limitations: this is model-assisted relevance/support checking, not a correctness proof. The same
+model may make correlated mistakes; bounded candidates and prompt budgets may omit essential
+evidence. The .35 floor is experimental, not calibrated. Live resolution of the Ticket to Ride
+risk case remains pending; all earlier manual-test successes and failures and evaluation limitations remain.
+No commercial rulebook text is included in fixtures. No paid API calls, commit or push.
+
+Validation: `check bootJar` passed with 369 unit tests and 107 PostgreSQL/pgvector integration
+tests (476 total, zero failures/errors/skips); `git diff --check` passed. Mock-provider cases
+cover lower-scoring passage selection, preserved scores/provenance, selection failures, support
+rejection/error, exact-but-irrelevant quotes, unknown/unselected citations, quote correction,
+empty indexes, disabled behavior, foreign versions and input/configuration bounds. Local HTTP
+contracts cover Mini/Luna parameters, strict schemas, malformed IDs/booleans, refusals and duplicate/
+oversized selections. These test orchestration/contracts, not real semantic accuracy. Enabled
+review is covered through real services with doubles; existing HTTP/database integration checks
+exercise the disabled default. The first focused run found one invalid test fixture with blank
+LLM instructions; that fixture was corrected before the passing full run.
+
+### OpenAI-configured startup wiring correction — 2026-10-09
+
+The first manual review-enabled startup failed because the OpenAI `llmClient` implements
+`EvidenceReviewClient` at runtime alongside the explicit `evidenceReviewClient` wrapper. Spring
+found two candidates. The prior default/doubled startup checks did not exercise this real adapter
+with both application consumers. This was a wiring defect, not an API-key, model or compiler issue;
+the build already enables `-parameters`.
+
+Marked the explicit evidence-review and query-rewrite wrapper beans `@Primary` so both ports
+resolve deterministically when the shared OpenAI adapter also implements them. No provider
+parameters, evidence policy, workflow or private settings changed. Added four no-call Spring
+context regressions using a dummy key: Mini/Luna with both features enabled/disabled. All four
+reproduced the failure before the fix. They exercise actual service constructor injection and
+assert that each consumer receives its preferred port bean, without generating/reviewing anything.
+
+Validation after correction: `check bootJar` passed with 373 unit tests and 107 PostgreSQL/pgvector
+integration tests (480 total, zero failures/errors/skips), including all four new configured-adapter
+startup cases. `git diff --check` passed. Live answer/review quality and all previously recorded
+limitations remain unverified. No paid API calls, private environment/database changes, commit or push.
+
+### Manual reviewed-answer walkthrough and citation-detail refinement — 2026-10-09
+
+After the wiring fix, browser screenshots from manual testing show the initial all-four ticket answer
+followed by a successful risk response explaining lost points for unfinished retained tickets.
+Expanded sources show an Object of the Game warning about point loss and the setup retention
+rule. Game End is not required if another supplied passage supports the actual claim. This
+supersedes the pending risk-answer retest for this individual exchange only; earlier failures remain
+recorded. No request logs or active model/effort settings accompanied these screenshots, so they
+are limited manual-test observations, not an independently instrumented benchmark of review decisions.
+
+Seven additional screenshot cases show expected answer behavior: initial five rejected; initial
+one rejected; unwanted starting tickets returned to the shuffled deck bottom; previously retained
+tickets cannot be discarded; an unfinished-ticket follow-up resolves its pronoun and explains
+point loss; an instruction to ignore the rules does not override the initial four-card deal; and
+the unsupported customer-service-number question returns LOW. Rule answers display MEDIUM and
+expanded relevant setup, drawing-ticket or objective sources. Persisted workflow state, latency,
+cost, repetition stability and broader source coverage were not independently verified.
+
+Citation gap observed before the refinement: the unfinished-ticket answer specifies deduction of the ticket's value
+from the final score, but its displayed quote establishes only point loss. Previously supplied
+Game End content supports the precise deduction; that precise evidence is not displayed in this
+answer's citation. Correct rule knowledge does not establish complete quote-level support.
+This demonstrates a live limitation of the model-assisted support check despite successful
+answer behavior. Other details (such as initial deal size) likewise require actual quoted premises.
+
+The generic selection prompt now requests precise applicable amount/calculation/timing/condition
+rules when available. Generation and quote-correction instructions require the quoted passages
+themselves to support each detail, otherwise select a more precise quote or reduce answer
+specificity. The support-review prompt audits those details individually and rejects missing
+quoted premises. No game-specific checks, extra calls, new retry, schema changes, threshold
+changes or workflow modifications were added. Review remains optional and experimental.
+
+Three original fictional-rule regression cases cover a general answer/general quote, a precise
+answer/general quote rejected by the review double, and a precise answer/precise quote accepted.
+They verify delivered instructions, quote-only reviewer input and fallback/provenance behavior;
+they do not prove real-model enforcement. The citation-detail refinement awaits live retesting;
+broader evaluation and correlated model-error limitations remain. No commercial rulebook text
+was added. README/architecture notes reflect the narrow live evidence and remaining limitation.
+
+Validation: `check bootJar` passed with 376 unit tests and 107 PostgreSQL/pgvector integration
+tests (483 total, zero failures/errors/skips); `git diff --check` passed. Live verification of
+the refined citation behavior remains pending. No paid API calls, private environment/database
+changes, commit or push.
+
+### Successful citation-detail retest — 2026-10-09
+
+Subsequent screenshots from manual testing with sources expanded show both requested retests succeeding.
+The previously retained-ticket discard answer cites the Draw Tickets restriction on discarding
+only newly drawn tickets. The unfinished-ticket follow-up resolves its pronoun and now cites
+Game End's specific value-deduction rule for its claim about the final score. Both display MEDIUM.
+The previously observed citation-detail gap is resolved for this individual exchange, superseding
+the pending live retest above. Earlier incomplete citations and failures remain historical evidence.
+
+This is a limited manual-test observation. Active model/effort, actual review decisions, request IDs,
+workflow state, latency/cost and repeated-run stability were not independently verified from these
+screenshots. Broad semantic accuracy, citation completeness, calibrated confidence and same-model
+review reliability remain unverified. The review path remains optional and experimental.
+
+Documentation-only update: no source/configuration changes or new runtime tests. The last recorded
+automated validation remains 483 passing tests; `git diff --check` passed for this update.
+No additional paid API calls, private environment/database changes, commit or push.
 
 ## Milestone 0 — Project Bootstrap
 
@@ -137,7 +520,7 @@ Expected:
 
 ## Milestone 4 — RAG Question Answering
 
-Status: Complete and validated with provider doubles; a limited user-run live OpenAI demo passed on 2026-10-08. Broader live quality evaluation remains deferred.
+Status: Complete and validated with mock providers; a limited manual OpenAI demo passed on 2026-10-08. Broader live quality evaluation is still pending.
 
 Expected:
 
@@ -155,7 +538,7 @@ Expected:
 
 ## Milestone 5 — Production-Quality RAG
 
-Status: Complete and validated with deterministic provider doubles. Live-model quality remains unverified.
+Status: Complete and validated with deterministic mock providers. Live-model quality remains unverified.
 
 Expected:
 
@@ -174,7 +557,7 @@ Expected:
 
 ## Milestone 6 — Game Sessions + Teaching Flow
 
-Status: Complete and validated with provider doubles; the user-run live teaching/session walkthrough passed on 2026-10-08. Setup integration remains Milestone 7.
+Status: Complete and validated with mock providers; the manual live teaching/session walkthrough passed on 2026-10-08. Setup integration remains Milestone 7.
 
 Expected:
 
@@ -197,7 +580,7 @@ Customer experience must be teaching-first.
 
 ## Milestone 7 — Guided Setup Integrated with Teaching
 
-Status: Complete and validated with provider doubles; setup-specific live provider/physical walkthroughs remain unverified.
+Status: Complete and validated with mock providers; setup-specific live provider/physical walkthroughs remain unverified.
 
 Implemented:
 
@@ -215,7 +598,7 @@ Implemented:
 
 ## Milestone 8 — Voice + Minimal Demo UI
 
-Status: Implemented and validated with provider doubles and a synthetic-microphone browser walkthrough. Live speech quality remains unverified.
+Status: Implemented and validated with mock providers and a synthetic-microphone browser walkthrough. Live speech quality remains unverified.
 
 Expected:
 
@@ -257,7 +640,7 @@ The application should be demonstrable without Swagger or Postman.
 
 Milestone 8 is implemented on the existing `milestone-8-voice-demo-ui` branch. Work remains
 unstaged and uncommitted. No paid API calls, commit, push or branch change were performed.
-The user's private `.env` and existing Compose database were not read or changed.
+The private `.env` and existing Compose database were not read or changed.
 
 - Optional independently configured STT/TTS interfaces and OpenAI HTTP adapters default to disabled. Multipart/JSON provider contracts, bounded responses, timeouts, safe failures and empty transcription are covered by fixture tests.
 - The multipart session voice endpoint validates type/signature/size, preserves recognized text if answering fails and invokes the existing version-pinned question pipeline. Revision guards reject navigation races. TTS failure preserves the stored text/citations and returns a structured audio error; raw and generated audio are not persisted.
@@ -265,40 +648,40 @@ The user's private `.env` and existing Compose database were not read or changed
 - Push-to-talk requests the microphone on user action, stops tracks on release/cancellation and provides a file-upload alternative. The UI displays transcription, playable MP3 metadata/controls and understandable errors, with independently usable text. Spoken answers are disclosed as AI-generated.
 - User-requested spoken teaching/setup guidance also reuses the TTS adapter. Start-screen/session controls enable narration of the first and subsequent lessons/steps, with pause/stop/replay. The backend selects authored pinned content and segments long explanations without changing progress/history; frontend preferences suppress duplicate automatic narration after refresh/questions/review. STT and RAG are not required for authored narration.
 - README, architecture, OpenAPI description and `.env.example` now describe implemented Milestone 8 behavior and manual demonstrations. Private keys remain server-side. No new database migration or changes to V1–V7 were needed.
-- Automated checks and browser evidence are recorded under Milestone 8 validation below. The original user-run live OpenAI walkthrough is preserved verbatim, including its remaining evaluation limitations. No future work was implemented.
+- Automated checks and browser evidence are recorded under Milestone 8 validation below. The original manual OpenAI walkthrough is retained, including its remaining evaluation limitations. No future work was implemented.
 
 ### Follow-up: natural clarification retrieval
 
-- User-run Ticket to Ride USA testing found that "Is that okay if I just keep 2 tickets?" returned LOW, while an explicit initial-setup question returned a supported MEDIUM answer. This suggests a contextual retrieval limitation; the precise original fallback branch was not captured.
+- Manual Ticket to Ride USA testing found that "Is that okay if I just keep 2 tickets?" returned LOW, while an explicit initial-setup question returned a supported MEDIUM answer. This suggests a contextual retrieval limitation; the precise original fallback branch was not captured.
 - Retrieval now includes bounded active setup instructions and lesson explanations alongside titles and the latest user question. The original question remains intact; Unicode-safe per-field and overall budgets apply. No extra model call, threshold reduction or change to evidence/citation validation was introduced.
-- Regression tests cover natural wording, teaching-only context, long/Unicode cues and a provider-double pgvector session journey with preserved setup progress and citations. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed: 220 unit tests and 105 isolated integration tests (325 total; zero failures, errors or skips), plus executable JAR assembly. `git diff --check` passed. No paid API calls, commit or push were performed.
+- Regression tests cover natural wording, teaching-only context, long/Unicode cues and a mock-provider pgvector session journey with preserved setup progress and citations. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed: 220 unit tests and 105 isolated integration tests (325 total; zero failures, errors or skips), plus executable JAR assembly. `git diff --check` passed. No paid API calls, commit or push were performed.
 - Live OpenAI retesting of this change remains pending. Deterministic fixtures establish context delivery and workflow behavior, not real embedding relevance or improved answer accuracy. Previously recorded live results and broader evaluation limitations remain unchanged.
 
 ### Follow-up: answer rejection diagnostics
 
-- The user's subsequent live Ticket to Ride test still returned LOW at "Choose your starting tickets". Shared logs show 16 candidates, 13 below threshold, three returned matches and an LLM call; they do not identify the selected passages or precise fallback branch. The natural-follow-up issue remains unresolved, and no model-quality improvement is claimed.
+- The next manual Ticket to Ride test still returned LOW at "Choose your starting tickets". Shared logs show 16 candidates, 13 below threshold, three returned matches and an LLM call; they do not identify the selected passages or precise fallback branch. The natural-follow-up issue remains unresolved, and no model-quality improvement is claimed.
 - Added INFO diagnostics identifying retrieved chunk/document IDs, bounded single-line section titles, pages, similarity, prompt inclusion and the minimum answer evidence score. Each fallback now identifies its rejection reason and offending citation ID when applicable. No questions, rule bodies, generated answers/quotes, credentials or audio are logged by the new diagnostics. No models, thresholds, response contracts or evidence gates changed.
-- Tests exercise rejection reasons, prompt-budget exclusion and metadata-only logging, including sanitized/truncated titles. On 2026-10-08, `gradlew.bat test bootJar --no-daemon --console=plain` passed all 222 unit tests (zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. The 105 integration tests passed in the preceding context-improvement check and were not rerun for this diagnostics-only change. No paid API calls, commit or push were performed; historical live walkthrough results and remaining evaluation limitations are preserved. The next user-run request must capture the new logs to determine the live failure cause.
+- Tests exercise rejection reasons, prompt-budget exclusion and metadata-only logging, including sanitized/truncated titles. On 2026-10-08, `gradlew.bat test bootJar --no-daemon --console=plain` passed all 222 unit tests (zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. The 105 integration tests passed in the preceding context-improvement check and were not rerun for this diagnostics-only change. No paid API calls, commit or push were performed; historical live walkthrough results and remaining evaluation limitations are preserved. The next manual test needs to capture the new logs to determine the live failure cause.
 
 ### Follow-up: bounded quotation correction
 
-- User-supplied live diagnostics on 2026-10-08 identified `QUOTE_MISMATCH` for the Draw Tickets chunk. The Setting up the Game passage was also retrieved (similarity 0.563942, included in prompt). This confirms the observed rejection was citation validation, not absence of the setup passage. The generated quote was not logged, so its precise textual error remains unknown.
+- Live diagnostics from manual testing on 2026-10-08 identified `QUOTE_MISMATCH` for the Draw Tickets chunk. The Setting up the Game passage was also retrieved (similarity 0.563942, included in prompt). This confirms the observed rejection was citation validation, not absence of the setup passage. The generated quote was not logged, so its precise textual error remains unknown.
 - Strengthened citation instructions: copy contiguous exact quotes from the matching excerpt, and distinguish active setup from later turns using session context. An otherwise valid answer with a quote mismatch now permits one correction call using unchanged serialized evidence/context and feedback containing the rejected chunk ID, never the rejected answer/quote. Full validation applies again; no third call, relaxed thresholds or automatic quote substitution.
-- Added provider-double tests for successful correction, repeated mismatch and other rejected corrections, no retry for non-quote failures, provider-error propagation, unchanged evidence budget, and a PostgreSQL session test for a single final persisted exchange with unchanged setup progress and no partial history on correction failure. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 230 unit tests and 106 isolated integration tests (336 total, zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. Live accuracy of this correction remains unverified; broader evaluation and previously recorded walkthrough results are preserved.
-- No paid API calls, commit, push, private environment access or user-database modifications were performed. Live correction can add one paid LLM request and its configured per-call timeout; retrieval/indexing are not repeated.
+- Added mock-provider tests for successful correction, repeated mismatch and other rejected corrections, no retry for non-quote failures, provider-error propagation, unchanged evidence budget, and a PostgreSQL session test for a single final persisted exchange with unchanged setup progress and no partial history on correction failure. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 230 unit tests and 106 isolated integration tests (336 total, zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. Live accuracy of this correction remains unverified; broader evaluation and previously recorded walkthrough results are preserved.
+- No paid API calls, commit, push, private environment access or local-database modifications were performed. Live correction can add one paid LLM request and its configured per-call timeout; retrieval/indexing are not repeated.
 
 ### Follow-up: controlled local quotation comparison
 
-- User-supplied logs from 2026-10-08 show three separate requests: at 11:03 UTC a quote correction was accepted; at 11:04:12 a model-insufficient-evidence fallback occurred; at 11:04:49 a quote mismatch persisted through the second attempt. Setup evidence was included in all three. Questions were not logged, so exact mapping to the user's five-ticket question is unknown. One accepted correction does not establish general answer quality.
+- Logs from manual testing from 2026-10-08 show three separate requests: at 11:03 UTC a quote correction was accepted; at 11:04:12 a model-insufficient-evidence fallback occurred; at 11:04:49 a quote mismatch persisted through the second attempt. Setup evidence was included in all three. Questions were not logged, so exact mapping to the five-ticket question is unknown. One accepted correction does not establish general answer quality.
 - Added a dedicated quotation-comparison logger, OFF by default and enabled locally with `ANSWER_QUOTE_DIAGNOSTICS_LEVEL=DEBUG`. It captures the rejected quote and cited passage as escaped JSON, attempt/source IDs, original content length/truncation and other prompt chunk IDs containing the exact quote. Passage output is bounded at 8000 UTF-16 characters with Unicode-safe truncation. Existing INFO logs omit content. No question/full answer or credentials are added to these diagnostics.
-- README and `.env.example` explain temporary opt-in, restart, single reproduction and switching OFF again; captures contain rule text and should remain outside Git. The user's private environment was not accessed or changed. Tests use fictional text and cover disabled logging, exact escaped text, wrong-source identification and bounded Unicode output. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 233 unit tests and 106 isolated integration tests (339 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed.
-- Citation checks, prompt behavior, retry bounds, models and thresholds are unchanged. No paid API calls, commit, push or user-database modifications were performed. Precise mismatch text and supported-deduction quality still require user-run capture/evaluation; previous walkthrough records and broader limitations are preserved.
+- README and `.env.example` explain temporary opt-in, restart, single reproduction and switching OFF again; captures contain rule text and should remain outside Git. The private environment was not accessed or changed. Tests use fictional text and cover disabled logging, exact escaped text, wrong-source identification and bounded Unicode output. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 233 unit tests and 106 isolated integration tests (339 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed.
+- Citation checks, prompt behavior, retry bounds, models and thresholds are unchanged. No paid API calls, commit, push or local-database modifications were performed. Precise mismatch text and supported-deduction quality still require manual capture/evaluation; previous walkthrough records and broader limitations are preserved.
 
 ### Follow-up: whitespace-tolerant source quote matching
 
-- User-supplied opt-in diagnostics for request `68440d48-811b-4691-bd82-8be945bd5ef3` established that attempt 1 inserted ellipses between omitted sentences, while attempt 2 preserved the cited Draw Tickets wording but flattened paragraph breaks to spaces. The latter was rejected solely by the strict substring check. These findings do not verify the unseen generated answer's setup-versus-gameplay interpretation.
+- Opt-in diagnostics from manual testing for request `68440d48-811b-4691-bd82-8be945bd5ef3` established that attempt 1 inserted ellipses between omitted sentences, while attempt 2 preserved the cited Draw Tickets wording but flattened paragraph breaks to spaces. The latter was rejected solely by the strict substring check. These findings do not verify the unseen generated answer's setup-versus-gameplay interpretation.
 - Citation validation now tolerates whitespace-run differences only within the cited prompt chunk and returns the original contiguous source span. Non-whitespace text remains literal; ellipses, omitted/changed words, changed numbers/punctuation/case/order and wrong source IDs still fail. Generated and restored quotes remain bounded at 1000 UTF-16 characters. Whitespace-only matches avoid an extra correction call. The HIGH-confidence minimum-length gate uses restored source text so model-added spaces cannot inflate it. Models, thresholds, retry cap and workflow ownership are unchanged.
-- Regression tests use fictional rules to cover whitespace/Unicode, source restoration, omitted/altered text, literal regex characters, size limits and protection against model-added whitespace inflating HIGH confidence, plus session persistence of original source quotes without setup movement or a retry. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 247 unit tests and 107 isolated integration tests (354 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. No paid API calls, commit, push, private environment access or user-database changes were performed. Live retesting, supported-deduction quality and broader evaluation remain pending; previous results are preserved.
+- Regression tests use fictional rules to cover whitespace/Unicode, source restoration, omitted/altered text, literal regex characters, size limits and protection against model-added whitespace inflating HIGH confidence, plus session persistence of original source quotes without setup movement or a retry. On 2026-10-08, `gradlew.bat check bootJar --no-daemon --console=plain` passed 247 unit tests and 107 isolated integration tests (354 total; zero failures/errors/skips) and built the executable JAR; `git diff --check` passed. No paid API calls, commit, push, private environment access or local-database changes were performed. Live retesting, supported-deduction quality and broader evaluation remain pending; previous results are preserved.
 
 ### Earlier implementation record (Milestone 7)
 
@@ -310,10 +693,9 @@ Milestone 7 was implemented on `milestone-7-guided-setup`; the following records
 - Restart clears setup confirmations while retaining teaching progress/history. Step navigation uses locked revision checks. Questions preserve setup progress; context includes the active step as untrusted context rather than citation evidence. Provider failures and stale answers leave no partial exchange.
 - Six original Catan beginner setup steps reference the physical beginner diagram. A replacement seed teaching flow has QUICK 8 / STANDARD 10 / DETAILED 11 sections. Existing sessions keep the V6 flow; user-published Catan teaching is not replaced. No commercial rulebook/diagram is bundled or automatically indexed.
 - README includes provider-free Catan and Lantern Trail setup demonstrations, revision handling and optional setup Q&A. No new environment variables, dependency/provider changes or private `.env` access were needed.
-- Full validation passed 279 tests (192 unit, 87 isolated PostgreSQL/HTTP integration), zero failures/errors/skips, and built the executable JAR. Existing live OpenAI evidence is preserved verbatim below; no new paid calls or user-database operations were performed.
+- Full validation passed 279 tests (192 unit, 87 isolated PostgreSQL/HTTP integration), zero failures/errors/skips, and built the executable JAR. Existing live OpenAI evidence is retained below; no new paid calls or local-database operations were performed.
 
 ### Earlier implementation record (Milestones 0–6)
-
 
 - Java 21 Spring Boot Gradle application and checksum-pinned Gradle wrapper.
 - Feature package boundaries, local/test/production configuration, ECS JSON logging, and request IDs.
@@ -468,39 +850,39 @@ It must remain thin and reuse backend application logic.
 
 ### Milestone 8
 
-Spoken-guidance follow-up on 2026-10-08: implemented at the user's request within Milestone 8.
+Spoken-guidance follow-up on 2026-10-08: implemented as a requested follow-up within Milestone 8.
 The original 316-test implementation record below is retained.
 
 - `gradlew.bat check bootJar --no-daemon --console=plain` — PASS: 322 tests (218 unit, 104 isolated PostgreSQL/HTTP integration), zero failures/errors/skips; executable JAR built. Both browser scripts passed JavaScript syntax checks.
 - New coverage verifies pinned authored lesson narration, shared Explain again text, setup instructions/notes/warnings, long-segment bounds and Unicode preservation, one synthesis call per requested segment, no database transaction during TTS, unchanged session/history, safe provider failures, invalid/stale requests and discarded audio after concurrent navigation.
 - Headless Edge/Playwright with a disposable database and fake providers passed first-lesson narration after start-screen opt-in, decoded synthetic silent MP3 playback, Stop/Replay and current-page audio reuse, unchanged session state, refresh/review suppression, Explain again, setup/Repeat narration, opt-out and mobile layout. No JavaScript page errors occurred. The browser fixture substitutes a locally constructed silent MP3 for fake provider audio; this verifies playback mechanics, not real TTS quality or human-like speech. The mobile screenshot was visually inspected.
-- No paid API calls, private `.env` reads, user database changes, staging, commits, pushes or branch changes. The temporary preview process/database were removed after validation. Prior live OpenAI observations are preserved verbatim; live narration/STT quality and the broader evaluation limitations remain unverified.
+- No paid API calls, private `.env` reads, local database changes, staging, commits, pushes or branch changes. The temporary preview process/database were removed after validation. Prior live OpenAI observations are retained; live narration/STT quality and the broader evaluation limitations remain unverified.
 
 Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
 
-- `gradlew.bat check bootJar --no-daemon --console=plain` PASS: all 316 tests (217 unit, 99 isolated PostgreSQL/HTTP integration), zero failures/errors/skips; executable JAR built. Provider requests use local HTTP fixtures or doubles; Testcontainers databases are separate from the user's Compose database.
+- `gradlew.bat check bootJar --no-daemon --console=plain` PASS: all 316 tests (217 unit, 99 isolated PostgreSQL/HTTP integration), zero failures/errors/skips; executable JAR built. Provider requests use local HTTP fixtures or doubles; Testcontainers databases are separate from the local Compose database.
 - Coverage includes audio MIME/signature/size checks, binary defensive copies, multipart STT and JSON/MP3 TTS contracts, disabled providers, redacted configuration/errors, response bounds, malformed/empty responses, timeouts/rate limits, existing cited session answers, TTS partial failure, preserved transcription on LLM failure, unchanged progress/history on rejected requests, completed/missing sessions and setup changes during transcription. Tests verify that speech calls do not hold database transactions.
 - Real HTTP/Thymeleaf tests cover backend-loaded games, STANDARD selection, provider-free teaching, generic teaching/setup/resume/playing/completion, read-only review, citations/history, escaping, stale form submissions, safe errors and page headers. Initial focused checks exposed a reserved Thymeleaf variable, test-fixture mistakes and URL session rewriting; these were corrected before the passing full suite.
 - Headless Edge via Playwright passed a desktop/mobile Lantern Trail journey with a synthetic microphone, fake STT/TTS/embedding/LLM providers and an isolated PostgreSQL container. Verified push-to-talk upload, displayed transcription, saved cited answer/history, audio Blob controls, unchanged active setup step, resumed teaching, PLAYING, non-mutating review and retained history after completion. No JavaScript page errors occurred. Desktop/mobile screenshots were visually inspected; browser checks required execution outside the sandbox.
 - Limitations: the synthesized MP3 in this browser fixture is header-only test data, so the check verifies audio transport/controls, not successful decoded playback or intelligible speech. Human microphone permission/device behavior, real STT accuracy and live TTS quality were not tested. No paid calls were made. Full-codec validation, server duration enforcement, production authentication and retention policies remain outside this local demo. The prior live OpenAI walkthrough and broader evaluation limitations below remain unchanged.
-- No staging, commit, push or branch change. V1–V7, existing private configuration and user database were preserved. The temporary preview process and its disposable Testcontainers database were removed after validation; ignored check scripts/logs/screenshots remain under `build/`.
+- No staging, commit, push or branch change. V1–V7, existing private configuration and local database were preserved. The temporary preview process and its disposable Testcontainers database were removed after validation; ignored check scripts/logs/screenshots remain under `build/`.
 
 ### Milestone 7
 
 Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
 
 - Compilation and focused domain/session integration checks passed before the full suite.
-- `gradlew.bat check bootJar --no-daemon --console=plain` — PASS: all 279 tests (192 unit, 87 isolated PostgreSQL/pgvector integration), zero failures/errors/skips; executable JAR built. AI calls use doubles, without real keys or paid calls. Testcontainers databases are separate from the user's Compose database.
+- `gradlew.bat check bootJar --no-daemon --console=plain` — PASS: all 279 tests (192 unit, 87 isolated PostgreSQL/pgvector integration), zero failures/errors/skips; executable JAR built. AI calls use doubles, without real keys or paid calls. Testcontainers databases are separate from the local Compose database.
 - Coverage includes generic and seeded Catan journeys; all depths; explicit/triggered setup; current/next/previous/repeat/restart/complete; first/last/single-step boundaries; saved teaching resume; readiness after further teaching; history and progress preservation during Q&A; evidence/context isolation and prompt budgets; missing/invalid configuration; immutable flow/version pins; provider failure; duplicate-action and restart-versus-question races; transaction rollback; database ownership; V6 upgrade/session/history/custom-publication preservation and repeatable migrations.
 - Existing Milestone 0–6 checks, including deterministic retrieval evaluation and earlier migration/data-preservation tests, pass. Original live OpenAI walkthrough text is unchanged.
 - Limitations: no live setup-specific OpenAI or physical-board walkthrough was performed. Catan guidance is an original concise beginner configuration requiring the physical rulebook diagram, not a complete rulebook or automatic board verification. Authored setup is not automatically indexed as evidence. Broader live grounding, confidence calibration, multi-game/adversarial/provider-failure evaluation remain deferred as recorded below. Legacy flows without setup triggers keep their earlier readiness behavior.
 - No staging, commit, push or branch change. Milestone 8 remains unstarted: no speech adapters, audio endpoints, templates or browser UI.
 
-### User-run live OpenAI walkthrough — 2026-10-08
+### Manual OpenAI walkthrough — 2026-10-08
 
-Evidence: Swagger response bodies supplied by the user in this conversation, including the
-attached final history response. These are user-run manual observations, not agent-executed
-provider tests or an automated benchmark. The user configured the project for OpenAI embeddings
+Evidence: Swagger response bodies and the final history response from manual testing.
+These observations are separate from automated provider tests and do not constitute a benchmark.
+The reported configuration used OpenAI embeddings
 (`text-embedding-3-small`, 1536 dimensions) and generation (`gpt-4.1-mini`); the responses do not
 independently attest the running model identifiers. No API key was included in the evidence or
 read/copied into this documentation.
@@ -514,8 +896,8 @@ read/copied into this documentation.
 - Gameplay question about spare markers running out correctly returned finishing the current turn, ending the demo and counting collected markers, citing Ending the demo, page 2. Confidence was MEDIUM, cited similarity approximately 0.7557 and returned revision 5. A separate post-question GET confirming PLAYING was not supplied.
 - Explicit completion at revision 5 returned COMPLETED stage/status, revision 6, a populated endedAt and both completed section keys. A subsequent question returned INVALID_SESSION_ACTION / "This session is completed" as expected; the supplied body establishes the application error, while the HTTP status was not separately pasted.
 - Final history retained exactly six ordered messages (sequence numbers 1–6): three USER questions and three ASSISTANT answers, with their quotes/source metadata preserved. The rejected post-completion question added no history entry.
-- This supersedes blanket "all live testing deferred" statements for these exercised paths only. Broader Catan/multi-game live evaluation, long or ambiguous conversation quality, adversarial prompts, provider failure/rate-limit behavior, threshold calibration and factuality/hallucination measurement remain unverified. Previous automated/provider-double results and historical deferral statements remain unchanged below.
-- Documentation-only recording: no source/configuration edits, paid calls, database operations, staging, commit, push or branch change performed by the agent. Application tests were not rerun for this documentation-only update; the 254-test result below belongs to Milestone 6 implementation validation. Documentation whitespace check passed.
+- This supersedes blanket "all live testing deferred" statements for these exercised paths only. Broader Catan/multi-game live evaluation, long or ambiguous conversation quality, adversarial prompts, provider failure/rate-limit behavior, threshold calibration and factuality/hallucination measurement remain unverified. Previous automated/mock-provider results and historical deferral statements remain unchanged below.
+- Documentation-only recording: no source/configuration edits, paid calls, database operations, staging, commit, push or branch change performed for this documentation update. Application tests were not rerun for this documentation-only update; the 254-test result below belongs to Milestone 6 implementation validation. Documentation whitespace check passed.
 
 ### Milestone 6
 
@@ -526,7 +908,7 @@ Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4
 - Unit coverage includes ordered immutable depth-specific content, section validation, persisted-state transitions, completion, first/last navigation boundaries, nonadvancing controls, wrong-flow rejection, bounded context defaults/limits, whole-message selection, contextual retrieval bounds/Unicode and structured untrusted context that cannot become evidence. Prompt budgets remove older context before sacrificing retrieved evidence.
 - Seventeen new PostgreSQL/real-HTTP integration cases cover session creation/default depth/player validation, seeded Catan depth selection, generic flow publication, immutable flow/default pinning, progressive navigation and explain-again examples, saved citations and contextual follow-ups, question-preserved lessons/resumption, cross-session isolation and history cursors, empty/weak evidence fallback, safe provider timeout with no partial exchange, same-session PLAYING/COMPLETED transitions, concurrent navigation/questions, stale answers and atomic rollback after assistant-message insertion failure.
 - Migration checks cover fresh V6 startup, repeatability, flow/version/section/lifecycle constraints and V5-to-V6 upgrade preserving catalog rows, imported text, chunks and existing vectors. Earlier V1/V3/V4-to-current migration checks are retained and updated for the added migration.
-- Tests use local provider doubles and isolated Testcontainers databases; no paid calls or real API keys. Existing Compose data/services and private `.env` were not read, changed or migrated. Restart the local app to apply V6 for manual use. Provider-free teaching and optional live Q&A instructions are in README.
+- Tests use local mock providers and isolated Testcontainers databases; no paid calls or real API keys. Existing Compose data/services and private `.env` were not read, changed or migrated. Restart the local app to apply V6 for manual use. Provider-free teaching and optional live Q&A instructions are in README.
 - Live OpenAI testing for Milestones 3 and 4 remains explicitly deferred. Contextual follow-up quality, real-model grounding and confidence calibration remain unverified. Explain-again is deterministic authored content with examples/tips, not a live LLM rewrite. Reference lessons are introductory and do not execute/verify physical setup.
 - `git diff --check` and new-source whitespace checks — PASS. AGENTS.md, PROJECT_SPEC.md, build dependencies, provider adapters and V1–V5 migrations are unchanged. Optional SESSION_* defaults were added to `.env.example` and application configuration; private `.env` remains untouched.
 - Work remains unstaged/uncommitted on `milestone-6-session-management`. No commit, push or branch change was performed. Milestone 7 remains unstarted: no SetupFlow execution, setup triggers/steps, interruption/resume integration, voice or browser UI were added.
@@ -541,14 +923,14 @@ Validation on 2026-10-08 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4
 - Unit coverage includes pipeline order, top-K after duplicate suppression/reranking, safe rejection of missing/duplicate/foreign/altered reranker candidates and failures, nonfinite/out-of-range thresholds, normalized bounded immutable filters, conservative contained overlap and conflicting variants, candidate saturation, startup validation/legacy blank settings, uncited strong evidence and trivial-quote confidence caps.
 - PostgreSQL/HTTP coverage includes source-type/document filtering before candidate selection, default language and cross-language ruleset isolation, explicit expansion opt-in, foreign/non-expansion selections failing before provider calls, duplicate-heavy top-K recovery, diagnostics, question filter propagation, weak-evidence fallback without LLM calls and meaningful invalid-filter/threshold/ownership responses.
 - These are deterministic pipeline results, not measurements of real embedding relevance, confidence calibration, answer factuality or hallucination rate. Live OpenAI testing for Milestones 3 and 4 remains deferred, as requested.
-- Tests use local provider doubles and isolated Testcontainers databases. No real API keys, paid calls, existing Compose data, `.env` edits or local service changes are required. No Milestone 6 work, commit, push, staging or branch change is performed.
+- Tests use local mock providers and isolated Testcontainers databases. No real API keys, paid calls, existing Compose data, `.env` edits or local service changes are required. No Milestone 6 work, commit, push, staging or branch change is performed.
 - `git diff --check` and source/fixture whitespace checks — PASS. AGENTS.md, PROJECT_SPEC.md, dependencies and migrations are unchanged; Flyway remains at V5. Changes remain unstaged and uncommitted on `milestone-5-production-quality-rag`. README and architecture documentation describe defaults, API examples, evaluation reproduction and limitations.
 
 ### Milestone 4
 
 Validation on 2026-10-07 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4:
 
-- The first unit run exposed a fixture using an unsaved GameVersion without an ID; the fixture was corrected. A subsequent full run passed all 137 unit tests and 42/51 integration tests; nine new integration cases failed while replacing an existing Mockito answer with `when`, which invoked the prior answer with a null matcher argument. Provider doubles were corrected to use `doAnswer`/`doReturn`/`doThrow`. The final passing full run below supersedes these intermediate fixture failures.
+- The first unit run exposed a fixture using an unsaved GameVersion without an ID; the fixture was corrected. A subsequent full run passed all 137 unit tests and 42/51 integration tests; nine new integration cases failed while replacing an existing Mockito answer with `when`, which invoked the prior answer with a null matcher argument. Mock providers were corrected to use `doAnswer`/`doReturn`/`doThrow`. The final passing full run below supersedes these intermediate fixture failures.
 - Final `gradlew.bat check bootJar --no-daemon --console=plain` — PASS. All 188 tests passed: 137 unit and 51 PostgreSQL/pgvector integration tests, zero failures/errors/skips. Executable JAR rebuilt successfully. Existing Milestone 0–3 migration, ingestion, catalog and retrieval tests continue to pass.
 - Local HTTP provider-contract tests cover structured schema, fixed low randomness, nonstored requests, output message parsing, refusal, malformed/incomplete envelopes/contracts, safe HTTP/rate-limit/timeout failures, disabled/blank legacy configuration, startup bounds, immutable contracts and redacted diagnostics.
 - Application unit tests cover confidence boundaries, weakest cited score, empty/weak evidence avoiding generation, refusal, invented/excluded IDs or quotes, duplicate citations, provider errors, question limits, JSON-escaped prompt-injection text, whole-chunk context budgets and cross-version rejection.
@@ -600,8 +982,8 @@ Validation on 2026-10-07 using installed Temurin JDK 21.0.12.1 and Gradle 8.14.4
 - Real HTTP coverage: seed data, OpenAPI paths, game/version registration and reads, Location headers, pagination, DTO validation, malformed UUIDs, duplicates, foreign ownership, inactive/missing defaults, and player count rejection.
 - Transaction/database coverage: default switching, idempotent selection, creation replacing the default, concurrent selections retaining exactly one default, FK/uniqueness/check constraints, and failed assignment preserving existing defaults.
 - Migration coverage: fresh startup with Hibernate validation; V1-to-V3 upgrade preserving an existing marker table/data; migration validation and repeat runs without duplicate seed data.
-- Existing bootstrap health/Swagger/vector/error tests also passed. No paid AI calls were made, and isolated Testcontainers databases were used rather than the user's local Compose database.
-- Manual demonstration commands are in README. An already-running local application must be restarted to load the new code and apply V2/V3 to its retained database volume; that user database was not changed by these checks.
+- Existing bootstrap health/Swagger/vector/error tests also passed. No paid AI calls were made, and isolated Testcontainers databases were used rather than the local Compose database.
+- Manual demonstration commands are in README. An already-running local application must be restarted to load the new code and apply V2/V3 to its retained database volume; that local database was not changed by these checks.
 
 ### Milestone 0 history
 
@@ -622,13 +1004,13 @@ Earlier bootstrap validation on 2026-10-07 using Temurin JDK 21.0.12.1 and Gradl
 
 ## Known issues
 
-- No remaining automated Milestone 8 acceptance blockers are known. Docker/WSL is working. The limited user-run live OpenAI walkthrough above passed; broader live provider/quality evaluation and live STT/TTS quality remain deferred. Browser voice validation used a synthetic microphone and fixture audio rather than human speech or live synthesis.
+- No remaining automated Milestone 8 acceptance blockers are known. Docker/WSL is working. The limited manual OpenAI walkthrough above passed; broader live provider/quality evaluation and live STT/TTS quality remain deferred. Browser voice validation used a synthetic microphone and fixture audio rather than human speech or live synthesis.
 - Session/teaching/setup APIs are local-development functionality without authentication. Flows are append-only and existing sessions pin their original content. Reference Catan lessons are an original introductory overview, not a complete commercial rulebook; authored reading pointers are not verified generated-answer citations. Setup confirmations are recorded, but the application cannot verify the physical board. Setup-specific live provider/physical walkthroughs remain unverified.
 - Session context keeps a bounded window of whole messages; an oversized newest message can leave no retained history. Retrieval uses deterministic recent-user-topic/lesson/setup-title cues rather than model-driven rewriting. The prompt budget may further remove context to retain source evidence. Summarization, persisted expansion selection, retention/deletion policies and live follow-up quality remain unimplemented/unverified.
 - Session revisions reject duplicate actions and discard stale generated answers after concurrent changes with no partial exchange. Provider requests completed before a conflict may still incur charges; no automatic retry is performed.
 - Docker access and localhost checks required execution outside the sandbox. Future integration checks need access to the running Docker Linux engine.
 - Catalog, rule import, indexing, retrieval and question answering are local-development functionality without authentication. PDF extraction, edit/delete APIs, full BCP 47 registry validation and later-milestone functionality remain outside this implementation. Repeat imports create additional documents; retrieval suppresses duplicates without deleting stored documents/chunks.
-- Automated tests establish provider contracts and deterministic database behavior without real API keys. The user-run live demo additionally exercised narrow retrieval/generation and session paths, but is not a real-model relevance benchmark. Provider token limits can still reject text because local bounds count characters, not tokens.
+- Automated tests establish provider contracts and deterministic database behavior without real API keys. The manual live demo additionally exercised narrow retrieval/generation and session paths, but is not a real-model relevance benchmark. Provider token limits can still reject text because local bounds count characters, not tokens.
 - Live OpenAI testing for Milestones 3 and 4 was originally deferred; the limited walkthrough above now supplements that historical record. Broader quality evaluation remains deferred. Prompt defenses and exact citation validation cannot guarantee every generated claim is supported or prevent every prompt injection. Confidence gates remain uncalibrated heuristics; neither deterministic Milestone 5 metrics nor this small manual demo replaces systematic grounding evaluation.
 - Candidate pools are bounded and can underfill top-K after duplicate suppression; diagnostics flag saturation. The default reranker preserves cosine ordering and does not claim a learned relevance improvement. Expansion selection is document-level only; language filtering does not translate or bypass version isolation. These remain local-development RAG improvements rather than a production-readiness claim.
 - Indexing is synchronous and calls the provider per pending chunk. A failed batch stores no new vectors but already completed provider requests may still incur costs. Exact search and synchronous indexing will need revisiting for larger datasets; no ANN index or background worker is included.

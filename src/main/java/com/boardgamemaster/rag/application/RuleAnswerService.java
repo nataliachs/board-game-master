@@ -19,16 +19,23 @@ public class RuleAnswerService {
     private final RuleAnswerPromptBuilder prompts;
     private final LlmClient llm;
     private final AnswerProperties config;
+    private final EvidenceReviewService review;
     private enum FallbackReason {
         NO_RETRIEVED_EVIDENCE, PROMPT_BUDGET_EXCLUDED_EVIDENCE, NO_STRONG_EVIDENCE,
         MODEL_INSUFFICIENT_EVIDENCE, UNKNOWN_CITATION, DUPLICATE_CITATION,
-        QUOTE_MISMATCH, WEAK_CITATION, NO_CITATIONS
+        QUOTE_MISMATCH, WEAK_CITATION, NO_CITATIONS, NO_RELEVANT_EVIDENCE, ANSWER_SUPPORT_REJECTED
     }
     private record Rejection(FallbackReason reason, UUID chunkId) { }
 
     public RuleAnswerService(GameService games, RuleRetrievalService retrieval, RuleAnswerPromptBuilder prompts,
             LlmClient llm, AnswerProperties config) {
+        this(games, retrieval, prompts, llm, config, null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public RuleAnswerService(GameService games, RuleRetrievalService retrieval, RuleAnswerPromptBuilder prompts,
+            LlmClient llm, AnswerProperties config, EvidenceReviewService review) {
         this.games = games; this.retrieval = retrieval; this.prompts = prompts; this.llm = llm; this.config = config;
+        this.review = review;
     }
 
     // Deliberately no transaction: catalog reads finish before any external provider request.
@@ -56,16 +63,24 @@ public class RuleAnswerService {
     private RuleAnswer answer(UUID gameId, UUID versionId, String question, Integer topK, Double threshold,
             RetrievalFilters filters, AnswerConversation conversation, long started) {
         try {
-            var retrieved = conversation != null ? retrieval.searchContextual(versionId, question.strip(), conversation)
+            boolean reviewed = review != null && review.enabled();
+            var retrieved = reviewed ? retrieval.searchForReview(versionId, question.strip(), conversation, topK, threshold, filters, review)
+                    : conversation != null ? retrieval.searchContextual(versionId, question.strip(), conversation)
                     : topK == null && threshold == null && filters == null
                     ? retrieval.search(versionId, question.strip(), null)
                     : retrieval.search(versionId, question.strip(), topK, threshold, filters);
             var prompt = conversation == null ? prompts.build(versionId, question.strip(), retrieved.matches())
                     : prompts.build(versionId, question.strip(), retrieved.matches(), conversation);
+            if (reviewed && !prompt.evidence().isEmpty()) {
+                var selected = review.select(prompt);
+                if (selected.isEmpty()) { return fallback(gameId, versionId, FallbackReason.NO_RELEVANT_EVIDENCE, null); }
+                prompt = prompts.build(versionId, question.strip(), selected, conversation);
+            }
             for (var match : retrieved.matches()) {
                 LOG.info("Rule answer evidence: gameId={}, gameVersionId={}, chunkId={}, documentId={}, section={}, page={}, cosineSimilarity={}, includedInPrompt={}, minimumEvidenceSimilarity={}",
                         gameId, versionId, match.chunkId(), match.documentId(), logSection(match.sectionTitle()),
-                        match.pageNumber(), match.cosineSimilarity(), prompt.evidence().contains(match), config.minimumEvidenceSimilarity());
+                        match.pageNumber(), match.cosineSimilarity(), prompt.evidence().contains(match),
+                        reviewed ? review.candidateFloor() : config.minimumEvidenceSimilarity());
             }
             if (prompt.evidence().isEmpty()) {
                 return fallback(gameId, versionId, retrieved.matches().isEmpty() ? FallbackReason.NO_RETRIEVED_EVIDENCE
@@ -85,6 +100,9 @@ public class RuleAnswerService {
                         gameId, versionId, rejection == null ? "ACCEPTED" : rejection.reason());
             }
             if (rejection != null) { return fallback(gameId, versionId, rejection.reason(), rejection.chunkId()); }
+            if (reviewed && !review.supports(prompt, generated)) {
+                return fallback(gameId, versionId, FallbackReason.ANSWER_SUPPORT_REJECTED, null);
+            }
             var sources = new ArrayList<RuleAnswer.Source>();
             var cited = new HashSet<UUID>();
             for (var citation : generated.citations()) {
@@ -102,7 +120,7 @@ public class RuleAnswerService {
                     .allMatch(m -> cited.contains(m.chunkId()));
             boolean meaningfulQuotes = sources.stream().allMatch(s -> s.quote().strip().length() >= config.minimumQuoteCharacters());
             return new RuleAnswer(gameId, versionId, generated.answer().strip(),
-                    weakest >= config.highEvidenceSimilarity() && covered && meaningfulQuotes ? HIGH : MEDIUM, sources);
+                    !reviewed && weakest >= config.highEvidenceSimilarity() && covered && meaningfulQuotes ? HIGH : MEDIUM, sources);
         } finally { LOG.info("Rule question completed: gameId={}, gameVersionId={}, elapsedMs={}",
                 gameId, versionId, (System.nanoTime() - started) / 1_000_000); }
     }
@@ -137,7 +155,10 @@ public class RuleAnswerService {
         return quoteMismatch;
     }
 
-    private boolean strongEnough(double score) { return Double.isFinite(score) && score >= config.minimumEvidenceSimilarity() && score <= 1; }
+    private boolean strongEnough(double score) {
+        double minimum = review != null && review.enabled() ? review.candidateFloor() : config.minimumEvidenceSimilarity();
+        return Double.isFinite(score) && score >= minimum && score <= 1;
+    }
     private static String logSection(String section) {
         if (section == null) { return ""; }
         String safe = section.replaceAll("\\p{Cntrl}", " ");
