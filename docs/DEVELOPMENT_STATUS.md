@@ -13,7 +13,7 @@ is the default depth. Questions preserve the current lesson and setup step.
 Since then: Google Cloud deployment, a password-protected admin area, game import from a
 rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
 follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
-The latest full check (2026-11-09) passed **538 tests** (428 unit and 110 PostgreSQL/pgvector
+The latest full check (2026-11-09) passed **539 tests** (429 unit and 110 PostgreSQL/pgvector
 integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
@@ -35,6 +35,27 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## The answer step now sees the resolved follow-up — 2026-11-09
+
+Retest on revision 00018 (PR #19 deployed): "Will it ever go back to the draw pile?" after a
+question about the played Defuse again got "Yes" about the Exploding Kitten. The logs showed the
+follow-up rewrite applied, but its result was used only for the search: the answer model still
+received "Will it ever go back…", saw passages about reinserting the Kitten, and answered about
+that. A prompt instruction alone did not change this.
+
+`RuleRetrievalService.SearchResult` now carries `resolvedQuestion` (the rewrite, or null), and
+`RuleAnswerPromptBuilder` adds it to the answer input as a labelled field, with an instruction
+that it restates the current question and is neither evidence nor a new question. This reverses
+one point of the earlier design, which kept the rewrite out of the answer prompt entirely; the
+other guarantees stand: the user's own question is still the one answered, the rewrite is never
+an excerpt and can never be cited. `RuleAnswerServiceTest` (renamed test), `RuleRetrievalServiceTest`
+and `AnswerCompletenessConfigTest` cover it. Validation: 429 unit and 110 integration tests passed.
+
+Still open: "How many cards can I play on my turn?", asked as the fourth question in that session,
+fell back with `QUOTE_MISMATCH` on the same page-1 passage even with plain-punctuation excerpts,
+so at least one more kind of quote difference exists. Asked as a first question it succeeded
+five times out of five.
 
 ## Garbled apostrophes in quotes; follow-ups about the wrong card — 2026-11-09
 

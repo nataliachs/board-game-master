@@ -15,7 +15,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class RuleAnswerServiceTest {
-    @Test void rewrittenSearchDoesNotReplaceOriginalQuestionOrBecomeCitableEvidence() throws Exception {
+    @Test void rewrittenFollowUpIsLabelledContextButNeverReplacesTheQuestionOrBecomesEvidence() throws Exception {
         String question = "What's the risk?";
         String query = "What are the consequences of keeping all starting mission cards?";
         String rule = "Incomplete mission cards subtract their printed values from your final score.";
@@ -45,7 +45,9 @@ class RuleAnswerServiceTest {
             var data = mapper.readTree(request.input());
             assertThat(data.path("question").asText()).isEqualTo(question);
             assertThat(data.path("excerpts").get(0).path("content").asText()).isEqualTo(rule);
-            assertThat(request.input()).doesNotContain(query);
+            assertThat(data.path("excerpts")).hasSize(1);
+            // The restatement resolves what the follow-up means; it is a labelled field, never an excerpt.
+            assertThat(data.path("resolvedQuestion").asText()).isEqualTo(query);
             return new LlmResponse("Incomplete mission cards subtract points at final scoring.", true,
                     List.of(new LlmResponse.Citation(source.chunkId(), rule)));
         });
