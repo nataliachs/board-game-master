@@ -61,7 +61,10 @@ class SessionIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
     @LocalServerPort int port;
-    private static final UUID CATAN = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    /** Seeded by V9: Ticket to Ride is the reference game. */
+    private static final UUID REFERENCE_GAME = UUID.fromString("00000000-0000-0000-0000-000000000101");
+    private static final UUID REFERENCE_VERSION = UUID.fromString("00000000-0000-0000-0000-000000000201");
+    /** Catan was the reference game in V3–V8; upgrade tests still use it in pre-V9 schemas. */
     private static final UUID CATAN_VERSION = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private record Fixture(UUID game, UUID version, TeachingFlow flow) { }
 
@@ -128,12 +131,12 @@ class SessionIntegrationTest {
         assertThat(json(request("GET", path(id), null), 200).path("lesson").path("key").asText()).isEqualTo("START");
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
-    @Test void referenceCatanSupportsEveryDepthWithoutProviders() {
+    @Test void referenceGameSupportsEveryDepthWithoutProviders() {
         for (var depth : TeachingDepth.values()) {
-            var s = sessions.create(CATAN, 4, depth);
-            assertThat(s.session().gameVersionId()).isEqualTo(CATAN_VERSION);
+            var s = sessions.create(REFERENCE_GAME, 4, depth);
+            assertThat(s.session().gameVersionId()).isEqualTo(REFERENCE_VERSION);
             assertThat(s.lesson().key()).isEqualTo("INTRODUCTION");
-            assertThat(s.totalLessons()).isEqualTo(depth == TeachingDepth.QUICK ? 8 : depth == TeachingDepth.STANDARD ? 10 : 11);
+            assertThat(s.totalLessons()).isEqualTo(depth == TeachingDepth.QUICK ? 9 : depth == TeachingDepth.STANDARD ? 11 : 12);
         }
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
@@ -316,7 +319,7 @@ class SessionIntegrationTest {
         json(request("GET", path(UUID.randomUUID()), null), 404);
         var unconfigured = games.createVersion(f.game(), "Unconfigured", "base", "en", null, true, true);
         assertThat(json(request("POST", "/api/v1/sessions", Map.of("gameId", f.game(), "playerCount", 3)), 409).path("code").asText()).isEqualTo("TEACHING_FLOW_NOT_FOUND");
-        UUID id = sessions.create(CATAN, 3, null).session().id();
+        UUID id = sessions.create(REFERENCE_GAME, 3, null).session().id();
         json(request("POST", path(id) + "/messages", Map.of("question", " ")), 400);
         json(request("POST", path(id) + "/messages", Map.of("question", "x".repeat(4001))), 400);
         json(request("POST", path(id) + "/teaching/actions", Map.of("action", "CONTINUE")), 400);
@@ -363,9 +366,10 @@ class SessionIntegrationTest {
                 + "VALUES (?,?,'Preserved rules','RULEBOOK','1','en','Original fixture','rules.txt',CURRENT_TIMESTAMP,'Move one space.',1200,200,1)", document, CATAN_VERSION);
         jdbc.update("INSERT INTO " + schema + ".rule_chunks(id,document_id,game_version_id,content,chunk_index,start_offset,end_offset) VALUES (?,?,?,'Move one space.',0,0,15)", chunk, document, CATAN_VERSION);
         jdbc.update("INSERT INTO " + schema + ".rule_chunk_embeddings(chunk_id,game_version_id,provider,model,dimensions,embedding) VALUES (?,?,'fixture','preserved',3,'[1,0,0]'::public.vector)", chunk, CATAN_VERSION);
+        // V9 intentionally replaces the Catan reference seed, so this check stops at V8.
         var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
-                .locations("classpath:db/migration").load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
+                .locations("classpath:db/migration").target("8").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT name FROM " + schema + ".games WHERE id=?", String.class, marker)).isEqualTo("Preserved");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".teaching_sections", Integer.class)).isEqualTo(21);
         assertThat(jdbc.queryForObject("SELECT normalized_text FROM " + schema + ".rule_documents WHERE id=?", String.class, document)).isEqualTo("Move one space.");
@@ -627,8 +631,8 @@ class SessionIntegrationTest {
                 + "VALUES (?,?,'00000000-0000-0000-0000-000000000006',3,'STANDARD','TEACHING','ACTIVE','INTRODUCTION','[]',5,CURRENT_TIMESTAMP)", id, CATAN_VERSION);
         jdbc.update("INSERT INTO " + schema + ".conversation_messages(id,session_id,sequence_number,role,content,created_at) VALUES (?,?,1,'USER','Preserve me',CURRENT_TIMESTAMP)", UUID.randomUUID(), id);
         jdbc.update("INSERT INTO " + schema + ".teaching_flows(id,game_version_id,name,created_at) VALUES (?,?,'User publication',CURRENT_TIMESTAMP)", custom, CATAN_VERSION);
-        var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema).locations("classpath:db/migration").load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema).locations("classpath:db/migration").target("8").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
         var row = jdbc.queryForMap("SELECT * FROM " + schema + ".game_sessions WHERE id=?", id);
         assertThat(row.get("revision")).isEqualTo(5L); assertThat(row.get("setup_flow_id")).isNull();
         assertThat(row.get("current_section_key")).isEqualTo("INTRODUCTION");
@@ -638,14 +642,35 @@ class SessionIntegrationTest {
         assertThat(upgrade.migrate().migrationsExecuted).isZero();
     }
 
-    @Test void catanReferenceGuidesAllStepsAndResumesTeachingWithoutPaidCalls() {
-        UUID id = sessions.create(CATAN, 3, TeachingDepth.QUICK).session().id();
+    @Test void v8UpgradeReplacesCatanReferenceAndKeepsOtherGames() {
+        String schema = "reference_upgrade"; jdbc.execute("CREATE SCHEMA " + schema);
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
+                .locations("classpath:db/migration").target("8").load().migrate();
+        UUID session = UUID.randomUUID(); UUID other = UUID.randomUUID();
+        jdbc.update("INSERT INTO " + schema + ".game_sessions(id,game_version_id,teaching_flow_id,player_count,teaching_depth,stage,status,current_section_key,completed_sections,created_at) "
+                + "VALUES (?,?,'00000000-0000-0000-0000-000000000070',3,'STANDARD','TEACHING','ACTIVE','INTRODUCTION','[]',CURRENT_TIMESTAMP)", session, CATAN_VERSION);
+        jdbc.update("INSERT INTO " + schema + ".conversation_messages(id,session_id,sequence_number,role,content,created_at) VALUES (?,?,1,'USER','Old question',CURRENT_TIMESTAMP)", UUID.randomUUID(), session);
+        jdbc.update("INSERT INTO " + schema + ".games(id,slug,name,min_players,max_players,estimated_duration_minutes,active) VALUES (?,'user-game','User game',1,4,10,true)", other);
+        var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
+                .locations("classpath:db/migration").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".games WHERE slug='catan'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".game_sessions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".conversation_messages", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT name FROM " + schema + ".games WHERE id=?", String.class, other)).isEqualTo("User game");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".teaching_sections WHERE teaching_flow_id='00000000-0000-0000-0000-000000000301'", Integer.class)).isEqualTo(12);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".setup_steps", Integer.class)).isEqualTo(7);
+        assertThat(upgrade.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test void referenceGameGuidesAllStepsAndResumesTeachingWithoutPaidCalls() {
+        UUID id = sessions.create(REFERENCE_GAME, 3, TeachingDepth.QUICK).session().id();
         var lesson = sessions.current(id);
         while (!lesson.lesson().setupTrigger()) { lesson = sessions.navigate(id, GameSession.Action.CONTINUE, lesson.session().revision()); }
         var priorCompletion = lesson.session().completedSections();
         lesson = sessions.navigate(id, GameSession.Action.CONTINUE, lesson.session().revision());
         assertThat(lesson.session().stage()).isEqualTo(SessionStage.SETUP);
-        var setup = setups.current(id); assertThat(setup.totalSteps()).isEqualTo(6);
+        var setup = setups.current(id); assertThat(setup.totalSteps()).isEqualTo(7);
         while (setup.stepNumber() < setup.totalSteps()) { setup = setups.act(id, SetupService.Action.NEXT, setup.session().revision()); }
         var resumed = setups.act(id, SetupService.Action.COMPLETE, setup.session().revision());
         assertThat(resumed.session().currentSectionKey()).isEqualTo("PHYSICAL_SETUP");
@@ -818,7 +843,7 @@ class SessionIntegrationTest {
         var f=guided(true);
         try(var browser=HttpClient.newBuilder().cookieHandler(new java.net.CookieManager(null,java.net.CookiePolicy.ACCEPT_ALL)).build()) {
             var home=html(browser,"/");assertThat(home.statusCode()).isEqualTo(200);
-            assertThat(home.body()).contains(f.game().toString(),"STANDARD\" selected", "Original session game").doesNotContain("fixture-key");
+            assertThat(home.body()).contains(f.game().toString(),"value=\"STANDARD\" checked", "Original session game").doesNotContain("fixture-key");
             var created=form(browser,"/ui/sessions",Map.of("gameId",f.game().toString(),"playerCount","3","teachingDepth","STANDARD"));
             assertThat(created.statusCode()).isEqualTo(302);String location=created.headers().firstValue("Location").orElseThrow();
             String url=URI.create(location).getPath();UUID id=UUID.fromString(url.substring(url.lastIndexOf('/')+1));

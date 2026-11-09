@@ -239,8 +239,9 @@ class RuleVectorIntegrationTest {
             VALUES (?,?,'Existing original source','FAQ','1','en','Own fixture','own.txt',CURRENT_TIMESTAMP,'Preserved text',64,0,1)
             """, document, version);
         db.update("INSERT INTO rule_chunks (id,document_id,game_version_id,content,chunk_index,start_offset,end_offset) VALUES (?,?,?,'Preserved text',0,0,14)", chunk, document, version);
-        var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3);
+        // V9 intentionally replaces the Catan reference seed, so this check stops at V8.
+        var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("8").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(4);
         upgrade.validate();
         assertThat(db.queryForObject("SELECT content FROM rule_chunks WHERE id=?", String.class, chunk)).isEqualTo("Preserved text");
         assertThat(db.queryForObject("SELECT count(*) FROM rule_chunk_embeddings", Integer.class)).isZero();

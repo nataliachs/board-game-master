@@ -1,0 +1,13 @@
+# Files not uploaded by `gcloud run deploy --source .`
+.git
+.gitignore
+.gradle
+.idea
+.vscode
+build
+out
+*.iml
+.env
+.env.*
+local-rules/
+Claude outputs/

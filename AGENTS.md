@@ -7,9 +7,9 @@ These are the repository instructions for coding agents. Product requirements li
 ## Project
 
 Board Game Master teaches a selected board game, guides physical setup, and answers rule
-questions during play. It supports multiple games. Catan is the reference dataset, so its
-rules belong in data and fixtures rather than shared Java services. Validate the initial
-reference behavior with Catan.
+questions during play. It supports multiple games. Ticket to Ride (2025 edition) is the
+reference dataset (V9 replaced the earlier Catan reference), so its rules belong in data and
+fixtures rather than shared Java services. Validate reference behavior with Ticket to Ride.
 
 The main flow is:
 

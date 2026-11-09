@@ -34,6 +34,9 @@ public class SetupService {
         versions.findById(version).orElseThrow(() -> new CatalogException(CatalogException.Code.GAME_VERSION_NOT_FOUND, "Game version was not found"));
         return setups.requireLatest(version);
     }
+    /** The newest flow, or empty when none was published yet; never marks the caller's transaction for rollback. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<SetupFlow> findLatest(UUID version) { return setups.latest(version); }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public View current(UUID id) { return view(sessions.session(id, false)); }
     @Transactional

@@ -19,6 +19,24 @@ class GameDomainTest {
         assertThat(game.getDescription()).isEqualTo("Description");
     }
 
+    @Test
+    void acceptsOptionalCategoryAndCoverImage() {
+        var game = new Game("demo", "Demo", null, 2, 4, 30, null, true, " Family ", "/images/covers/demo.jpg");
+        assertThat(game.getCategory()).isEqualTo("Family");
+        assertThat(game.getCoverImageUrl()).isEqualTo("/images/covers/demo.jpg");
+        var remote = new Game("demo", "Demo", null, 2, 4, 30, null, true, null, "https://example.com/demo.png");
+        assertThat(remote.getCategory()).isNull();
+        assertThat(remote.getCoverImageUrl()).isEqualTo("https://example.com/demo.png");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"javascript:alert(1)", "http://example.com/a.png", "images/a.png", "/a b.png", "/a\"onerror.png"})
+    void rejectsUnsafeCoverImageUrls(String url) {
+        assertThatThrownBy(() -> new Game("demo", "Demo", null, 2, 4, 30, null, true, null, url))
+                .isInstanceOfSatisfying(CatalogException.class,
+                        exception -> assertThat(exception.code()).isEqualTo(CatalogException.Code.INVALID_GAME));
+    }
+
     @ParameterizedTest
     @MethodSource("invalidGames")
     void rejectsInvalidGameMetadata(String slug, String name, int min, int max, int duration) {

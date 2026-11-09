@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Game admin · Board Game Master</title><link rel="stylesheet" href="/css/demo.css"></head>
+<body><header th:replace="~{fragments :: header}"></header>
+<main class="admin-layout">
+  <div class="admin-head">
+    <div><p class="eyebrow">Admin</p><h1>Your game library</h1>
+      <p class="lead">Add games, then give each one setup steps and lessons. A game appears to players once it is active and has lessons.</p></div>
+    <a class="button primary" href="/admin/games/new">Add a game</a>
+  </div>
+  <div th:replace="~{fragments :: alerts}"></div>
+  <p class="admin-warning">This admin area has no sign-in. Run the app only on your own computer.</p>
+
+  <p th:if="${#lists.isEmpty(games)}" class="empty-results">No games yet. Choose <strong>Add a game</strong> to create the first one.</p>
+  <div class="table-wrap" th:if="${!#lists.isEmpty(games)}">
+    <table class="admin-table">
+      <thead><tr><th scope="col">Game</th><th scope="col">Version</th><th scope="col">Lessons</th><th scope="col">Setup steps</th><th scope="col">Rule sources</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+        <tr th:each="row, iter : ${games}">
+          <td><div class="admin-game">
+            <span class="mini-cover" th:classappend="${'cover-' + (iter.index % 6)}" aria-hidden="true"><img th:if="${row.game.coverImageUrl != null}" th:src="${row.game.coverImageUrl}" alt=""><span th:if="${row.game.coverImageUrl == null}" th:text="${row.game.initials()}"></span></span>
+            <span><strong th:text="${row.game.name}"></strong><br><span class="muted small" th:text="${row.game.slug + (row.game.category != null ? ' · ' + row.game.category : '')}"></span></span>
+          </div></td>
+          <td th:text="${row.version != null ? row.version.edition + ' · ' + row.version.language : 'No version'}"></td>
+          <td th:text="${row.lessons}"></td>
+          <td th:text="${row.setupSteps}"></td>
+          <td th:text="${row.ruleSources}"></td>
+          <td><span class="status" th:classappend="${!row.game.active ? 'status-off' : (row.ready() ? 'status-ready' : 'status-todo')}"
+                th:text="${!row.game.active ? 'Hidden' : (row.ready() ? 'Ready' : 'Needs lessons')}"></span></td>
+          <td><a class="button" th:href="@{/admin/games/{id}(id=${row.game.id})}">Edit</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">Step-by-step help: <code>docs/ADMIN_GUIDE.md</code> in the project.</p>
+</main><footer>Admin changes apply to new sessions. Sessions already started keep the lessons and steps they began with.</footer></body></html>

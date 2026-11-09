@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Add a game · Board Game Master</title><link rel="stylesheet" href="/css/demo.css"></head>
+<body><header th:replace="~{fragments :: header}"></header>
+<main class="admin-layout narrow">
+  <a href="/admin">← Back to the game library</a>
+  <p class="eyebrow">Admin · Step 1 of 3</p><h1>Add a game</h1>
+  <p class="lead">Start with the basics. After saving you will add setup steps and lessons on the next page.</p>
+  <p th:if="${error}" class="alert error" role="alert" th:text="${error}"></p>
+  <form class="card admin-form" action="/admin/games" method="post">
+    <div class="field-grid">
+      <div class="field wide-field"><label for="name">Game name</label><input id="name" name="name" required maxlength="200" th:value="${form.name}" placeholder="Ticket to Ride"></div>
+      <div class="field"><label for="publisher">Publisher <span class="optional">optional</span></label><input id="publisher" name="publisher" maxlength="200" th:value="${form.publisher}"></div>
+      <div class="field"><label for="category">Category <span class="optional">optional</span></label><input id="category" name="category" maxlength="40" th:value="${form.category}" placeholder="Family, Strategy, Party…" list="category-options">
+        <datalist id="category-options"><option value="Family"><option value="Strategy"><option value="Party"><option value="Co-op"><option value="Quick"></datalist></div>
+      <div class="field"><label for="minPlayers">Minimum players</label><input id="minPlayers" name="minPlayers" type="number" min="1" required th:value="${form.minPlayers}"></div>
+      <div class="field"><label for="maxPlayers">Maximum players</label><input id="maxPlayers" name="maxPlayers" type="number" min="1" required th:value="${form.maxPlayers}"></div>
+      <div class="field"><label for="duration">Play time (minutes)</label><input id="duration" name="duration" type="number" min="1" required th:value="${form.duration}"></div>
+      <div class="field"><label for="edition">Edition</label><input id="edition" name="edition" maxlength="100" th:value="${form.edition}" placeholder="Base game"></div>
+      <div class="field"><label for="language">Language code</label><input id="language" name="language" maxlength="35" th:value="${form.language}" placeholder="en"></div>
+      <div class="field wide-field"><label for="description">Short description <span class="optional">optional</span></label><textarea id="description" name="description" rows="2" maxlength="4000" th:text="${form.description}"></textarea></div>
+      <div class="field wide-field"><label for="coverImageUrl">Cover image <span class="optional">optional</span></label><input id="coverImageUrl" name="coverImageUrl" maxlength="500" th:value="${form.coverImageUrl}" placeholder="/images/covers/my-game.jpg or https://…">
+        <p class="hint">Put image files in <code>src/main/resources/static/images/covers/</code> and enter <code>/images/covers/file-name.jpg</code>. Leave empty to show initials.</p></div>
+      <div class="field wide-field"><label for="slug">Web address name <span class="optional">optional</span></label><input id="slug" name="slug" maxlength="100" th:value="${form.slug}" placeholder="Made from the name, like ticket-to-ride">
+        <p class="hint">Lowercase letters, numbers and single hyphens. It can't be changed later.</p></div>
+    </div>
+    <div class="actions"><a href="/admin">Cancel</a><button class="primary" type="submit">Save and continue</button></div>
+  </form>
+</main></body></html>

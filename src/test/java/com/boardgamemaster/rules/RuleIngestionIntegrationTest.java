@@ -52,7 +52,7 @@ class RuleIngestionIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
-    static final UUID VERSION = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    static final UUID VERSION = UUID.fromString("00000000-0000-0000-0000-000000000201");
     static final String BASE = "/api/v1/game-versions/" + VERSION + "/documents";
     static final String METADATA = """
         {"name":"Original demo","sourceType":"RULEBOOK","version":"1","language":"en","sourceReference":"Original test text"}
@@ -116,7 +116,7 @@ class RuleIngestionIntegrationTest {
         UUID sameGameVersion = UUID.randomUUID();
         jdbc.update("INSERT INTO games (id,slug,name,min_players,max_players,estimated_duration_minutes,active) VALUES (?,?,?,1,2,15,true)", otherGame, otherGame.toString(), "Other");
         jdbc.update("INSERT INTO game_versions (id,game_id,edition,version_label,language,active,default_version) VALUES (?,?, 'Demo','1','en',true,false)", otherVersion, otherGame);
-        jdbc.update("INSERT INTO game_versions (id,game_id,edition,version_label,language,active,default_version) VALUES (?,?, 'Other edition','1','en',true,false)", sameGameVersion, UUID.fromString("00000000-0000-0000-0000-000000000001"));
+        jdbc.update("INSERT INTO game_versions (id,game_id,edition,version_label,language,active,default_version) VALUES (?,?, 'Other edition','1','en',true,false)", sameGameVersion, UUID.fromString("00000000-0000-0000-0000-000000000101"));
         for (UUID version : new UUID[]{otherVersion, sameGameVersion}) {
             String base = "/api/v1/game-versions/" + version + "/documents";
             mvc.perform(get(base)).andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
@@ -208,8 +208,9 @@ class RuleIngestionIntegrationTest {
         Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("3").load().migrate();
         var db = new JdbcTemplate(new DriverManagerDataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()));
         db.update("UPDATE games SET description='Preserved user metadata' WHERE slug='catan'");
-        var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(4);
+        // V9 intentionally replaces the Catan reference seed, so this check stops at V8.
+        var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("8").load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(5);
         upgrade.validate();
         assertThat(db.queryForObject("SELECT description FROM games WHERE slug='catan'", String.class)).isEqualTo("Preserved user metadata");
         assertThat(db.queryForObject("SELECT count(*) FROM rule_documents", Long.class)).isZero();

@@ -12,6 +12,10 @@ Board Game Master teaches a selected board game, guides physical setup, and answ
 questions during play. It should help someone who has never played the game get started
 without having to work out which questions to ask first.
 
+> **Update, 2026-11-07:** the reference dataset is now Ticket to Ride (2025 edition), seeded by
+> migration V9, which removed the Catan seed. Catan examples below are historical illustrations of
+> the generic platform; the requirements themselves are unchanged.
+
 The platform supports multiple games. Catan is the first reference implementation, but shared
 services must not depend on Catan-specific rules.
 

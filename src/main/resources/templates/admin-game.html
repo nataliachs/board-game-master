@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Admin · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"></head>
+<body th:with="game=${page.game}"><header th:replace="~{fragments :: header}"></header>
+<main class="admin-layout">
+  <a href="/admin">← Back to the game library</a>
+  <div class="admin-head">
+    <div><p class="eyebrow" th:text="${'Admin · ' + (page.version != null ? page.version.edition + ' · ' + page.version.language : 'No version')}"></p><h1 th:text="${game.name}"></h1></div>
+    <a class="button" href="/">View the library</a>
+  </div>
+  <div th:replace="~{fragments :: alerts}"></div>
+  <nav class="admin-tabs" aria-label="Sections"><a href="#details">1. Details</a><a href="#setup">2. Setup steps</a><a href="#lessons">3. Lessons</a><a href="#rules">4. Rules for questions</a></nav>
+
+  <!-- 1. Details -->
+  <section class="card admin-section" id="details" aria-labelledby="details-title">
+    <h2 id="details-title">1. Game details</h2>
+    <form class="admin-form" th:action="@{/admin/games/{id}/details(id=${game.id})}" method="post">
+      <div class="field-grid">
+        <div class="field wide-field"><label for="name">Game name</label><input id="name" name="name" required maxlength="200" th:value="${game.name}"></div>
+        <div class="field"><label for="publisher">Publisher <span class="optional">optional</span></label><input id="publisher" name="publisher" maxlength="200" th:value="${game.publisher}"></div>
+        <div class="field"><label for="category">Category <span class="optional">optional</span></label><input id="category" name="category" maxlength="40" th:value="${game.category}" list="category-options">
+          <datalist id="category-options"><option value="Family"><option value="Strategy"><option value="Party"><option value="Co-op"><option value="Quick"></datalist></div>
+        <div class="field"><label for="minPlayers">Minimum players</label><input id="minPlayers" name="minPlayers" type="number" min="1" required th:value="${game.minPlayers}"></div>
+        <div class="field"><label for="maxPlayers">Maximum players</label><input id="maxPlayers" name="maxPlayers" type="number" min="1" required th:value="${game.maxPlayers}"></div>
+        <div class="field"><label for="duration">Play time (minutes)</label><input id="duration" name="duration" type="number" min="1" required th:value="${game.estimatedDurationMinutes}"></div>
+        <div class="field wide-field"><label for="description">Short description <span class="optional">optional</span></label><textarea id="description" name="description" rows="2" maxlength="4000" th:text="${game.description}"></textarea></div>
+        <div class="field wide-field"><label for="coverImageUrl">Cover image <span class="optional">optional</span></label><input id="coverImageUrl" name="coverImageUrl" maxlength="500" th:value="${game.coverImageUrl}" placeholder="/images/covers/my-game.jpg or https://…">
+          <p class="hint">Files go in <code>src/main/resources/static/images/covers/</code>; restart the app after adding one.</p></div>
+      </div>
+      <label class="checkbox-label"><input type="checkbox" name="active" th:checked="${game.active}">Show this game to players</label>
+      <div class="actions"><button class="primary" type="submit">Save details</button></div>
+    </form>
+  </section>
+
+  <!-- 2. Setup steps -->
+  <section class="card admin-section" id="setup" aria-labelledby="setup-title" th:if="${page.version != null}">
+    <h2 id="setup-title">2. Setup steps</h2>
+    <p class="muted">What players do with the real box before playing. Fill one card per step; empty cards are ignored. Save to get five more blank cards.</p>
+    <p th:if="${setupError}" class="alert error" role="alert" th:text="${setupError}"></p>
+    <form class="admin-form" th:action="@{/admin/games/{id}/setup(id=${game.id})}" method="post">
+      <fieldset class="row-card" th:each="step : ${steps}">
+        <legend th:text="${#strings.isEmpty(step.title) ? 'New step' : 'Step ' + step.order + ': ' + step.title}"></legend>
+        <div class="field-grid">
+          <div class="field small-field"><label th:for="${'step-order-' + step.index}">Order</label><input th:id="${'step-order-' + step.index}" name="stepOrder" type="number" min="0" th:value="${step.order}"></div>
+          <div class="field"><label th:for="${'step-title-' + step.index}">Title</label><input th:id="${'step-title-' + step.index}" name="stepTitle" maxlength="200" th:value="${step.title}" placeholder="Place the board"></div>
+          <div class="field"><label th:for="${'step-key-' + step.index}">Key <span class="optional">optional</span></label><input th:id="${'step-key-' + step.index}" name="stepKey" maxlength="80" th:value="${step.key}" placeholder="Made from the title"></div>
+          <div class="field wide-field"><label th:for="${'step-instruction-' + step.index}">Instruction</label><textarea th:id="${'step-instruction-' + step.index}" name="stepInstruction" rows="3" maxlength="8000" th:text="${step.instruction}" placeholder="What players should do, in your own words."></textarea></div>
+          <div class="field"><label th:for="${'step-notes-' + step.index}">Notes <span class="optional">one per line</span></label><textarea th:id="${'step-notes-' + step.index}" name="stepNotes" rows="2" th:text="${step.notes}"></textarea></div>
+          <div class="field"><label th:for="${'step-warnings-' + step.index}">Warnings <span class="optional">one per line</span></label><textarea th:id="${'step-warnings-' + step.index}" name="stepWarnings" rows="2" th:text="${step.warnings}"></textarea></div>
+        </div>
+      </fieldset>
+      <div class="actions sticky-save"><span class="muted small">Saving publishes a new set of steps for new sessions.</span><button class="primary" type="submit">Save setup steps</button></div>
+    </form>
+  </section>
+
+  <!-- 3. Lessons -->
+  <section class="card admin-section" id="lessons" aria-labelledby="lessons-title" th:if="${page.version != null}">
+    <h2 id="lessons-title">3. Lessons</h2>
+    <p class="muted">Short lessons in teaching order. Tick which teaching styles show each lesson, and choose the one lesson where players stop to set up the table.</p>
+    <p th:if="${!page.hasSetup}" class="tip">Save setup steps first if you want a lesson to start guided setup.</p>
+    <p th:if="${lessonError}" class="alert error" role="alert" th:text="${lessonError}"></p>
+    <form class="admin-form" th:action="@{/admin/games/{id}/lessons(id=${game.id})}" method="post">
+      <label class="checkbox-label"><input type="radio" name="setupTrigger" value="" th:checked="${!#lists.contains(lessons.![setupTrigger], true)}">No lesson starts setup</label>
+      <fieldset class="row-card" th:each="lesson : ${lessons}">
+        <legend th:text="${#strings.isEmpty(lesson.title) ? 'New lesson' : 'Lesson ' + lesson.order + ': ' + lesson.title}"></legend>
+        <div class="field-grid">
+          <div class="field small-field"><label th:for="${'lesson-order-' + lesson.index}">Order</label><input th:id="${'lesson-order-' + lesson.index}" name="lessonOrder" type="number" min="0" th:value="${lesson.order}"></div>
+          <div class="field"><label th:for="${'lesson-title-' + lesson.index}">Title</label><input th:id="${'lesson-title-' + lesson.index}" name="lessonTitle" maxlength="200" th:value="${lesson.title}" placeholder="Your goal"></div>
+          <div class="field"><label th:for="${'lesson-key-' + lesson.index}">Key <span class="optional">optional</span></label><input th:id="${'lesson-key-' + lesson.index}" name="lessonKey" maxlength="80" th:value="${lesson.key}" placeholder="Made from the title"></div>
+          <div class="field wide-field"><label th:for="${'lesson-explanation-' + lesson.index}">Explanation</label><textarea th:id="${'lesson-explanation-' + lesson.index}" name="lessonExplanation" rows="4" maxlength="8000" th:text="${lesson.explanation}" placeholder="Explain this part of the game in your own words."></textarea></div>
+          <fieldset class="field wide-field inline-options"><legend>Shown in</legend>
+            <label><input type="checkbox" name="lessonQuick" th:value="${lesson.index}" th:checked="${lesson.quick}">Quick</label>
+            <label><input type="checkbox" name="lessonStandard" th:value="${lesson.index}" th:checked="${lesson.standard}">Standard</label>
+            <label><input type="checkbox" name="lessonDetailed" th:value="${lesson.index}" th:checked="${lesson.detailed}">Detailed</label>
+            <label class="trigger-option"><input type="radio" name="setupTrigger" th:value="${lesson.index}" th:checked="${lesson.setupTrigger}">Starts setup</label>
+          </fieldset>
+        </div>
+        <details class="more-fields"><summary>Examples, tips and references</summary>
+          <div class="field-grid">
+            <div class="field"><label th:for="${'lesson-examples-' + lesson.index}">Examples <span class="optional">one per line</span></label><textarea th:id="${'lesson-examples-' + lesson.index}" name="lessonExamples" rows="2" th:text="${lesson.examples}"></textarea></div>
+            <div class="field"><label th:for="${'lesson-tips-' + lesson.index}">Tips <span class="optional">one per line</span></label><textarea th:id="${'lesson-tips-' + lesson.index}" name="lessonTips" rows="2" th:text="${lesson.tips}"></textarea></div>
+            <div class="field wide-field"><label th:for="${'lesson-references-' + lesson.index}">References <span class="optional">one per line, e.g. a rulebook section name</span></label><textarea th:id="${'lesson-references-' + lesson.index}" name="lessonReferences" rows="2" th:text="${lesson.references}"></textarea></div>
+          </div>
+        </details>
+      </fieldset>
+      <div class="actions sticky-save"><span class="muted small">Saving publishes a new set of lessons for new sessions.</span><button class="primary" type="submit">Save lessons</button></div>
+    </form>
+  </section>
+
+  <!-- 4. Rules for questions -->
+  <section class="card admin-section" id="rules" aria-labelledby="rules-title" th:if="${page.version != null}">
+    <h2 id="rules-title">4. Rules for questions <span class="optional">optional</span></h2>
+    <p class="muted">Upload rules you have permission to use as a .txt or .md file, then index them so the Game Master can answer questions with citations. Indexing needs an embedding provider and may cost money.</p>
+    <table class="admin-table" th:if="${!#lists.isEmpty(page.sources)}">
+      <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Passages</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody><tr th:each="source : ${page.sources}"><td><strong th:text="${source.name}"></strong><br><span class="muted small" th:text="${source.fileName}"></span></td><td th:text="${source.type}"></td><td th:text="${source.chunks}"></td>
+        <td><form th:action="@{/admin/games/{id}/rules/{doc}/index(id=${game.id},doc=${source.id})}" method="post"><button type="submit">Index for questions</button></form></td></tr></tbody>
+    </table>
+    <form class="admin-form" th:action="@{/admin/games/{id}/rules(id=${game.id})}" method="post" enctype="multipart/form-data">
+      <div class="field-grid">
+        <div class="field wide-field"><label for="rules-file">Rules file (.txt or .md, UTF-8)</label><input id="rules-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown" required></div>
+        <div class="field"><label for="rules-name">Name <span class="optional">optional</span></label><input id="rules-name" name="name" maxlength="200" placeholder="Rulebook"></div>
+        <div class="field"><label for="rules-type">Type</label><select id="rules-type" name="sourceType"><option value="RULEBOOK">Rulebook</option><option value="FAQ">FAQ</option><option value="ERRATA">Errata</option><option value="EXPANSION">Expansion</option></select></div>
+        <div class="field wide-field"><label for="rules-reference">Where it came from <span class="optional">optional</span></label><input id="rules-reference" name="sourceReference" maxlength="500" placeholder="e.g. My own summary, or the publisher's rules page"></div>
+      </div>
+      <p class="hint">Keep commercial rulebooks out of Git, for example in the ignored <code>local-rules/</code> folder.</p>
+      <div class="actions"><button class="primary" type="submit">Upload rules</button></div>
+    </form>
+  </section>
+</main><footer>Admin changes apply to new sessions. Sessions already started keep the lessons and steps they began with.</footer></body></html>

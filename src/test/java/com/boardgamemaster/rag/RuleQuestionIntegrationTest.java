@@ -191,12 +191,12 @@ class RuleQuestionIntegrationTest {
         verifyNoInteractions(llm); verify(embeddings, never()).embed(anyString());
     }
 
-    @Test void catanReferenceSupportsOriginalPermittedInputWithoutGameSpecificCode() throws Exception {
-        UUID catan = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        UUID version = games.resolveDefaultVersion(catan, null).getId();
+    @Test void referenceGameSupportsOriginalPermittedInputWithoutGameSpecificCode() throws Exception {
+        UUID reference = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        UUID version = games.resolveDefaultVersion(reference, null).getId();
         // Original narrow paraphrase of a rule fact; no commercial rulebook is copied or bundled.
-        String original = "A settlement is worth one victory point.";
-        var document = documents.ingest(version, new DocumentMetadata("Original Catan test summary", RuleSourceType.FAQ,
+        String original = "Claiming a route of four spaces scores seven points.";
+        var document = documents.ingest(version, new DocumentMetadata("Original Ticket to Ride test summary", RuleSourceType.FAQ,
                 "test-1", "en", "Self-authored test paraphrase; not an official rule source"), "original-summary.txt", original.getBytes(StandardCharsets.UTF_8));
         indexing.index(version, document.getId());
         doAnswer(call -> {
@@ -204,7 +204,7 @@ class RuleQuestionIntegrationTest {
             return new LlmResponse(original, true, List.of(new LlmResponse.Citation(
                     UUID.fromString(input.path("excerpts").get(0).path("chunkId").asText()), original)));
         }).when(llm).generate(any());
-        var response = request("POST", "/api/v1/games/" + catan + "/questions", "{\"question\":\"How many victory points is a settlement worth?\"}");
+        var response = request("POST", "/api/v1/games/" + reference + "/questions", "{\"question\":\"How many points does a four-space route score?\"}");
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains(original, document.getId().toString(), version.toString());
     }

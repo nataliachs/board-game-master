@@ -36,6 +36,10 @@ concurrent version creation/default selection. The previous flag is flushed befo
 the replacement; a failure rolls back the whole transaction. Domain-level catalog errors
 are translated by feature-scoped advice; database integrity conflicts return a safe 409.
 
+V9 (2026-11-07) replaces the Catan reference seed described here with Ticket to Ride (2025 Edition,
+English): it deletes the Catan game, version, flows and anything attached to that version, then seeds
+Ticket to Ride with twelve lessons and seven setup steps. The Catan notes below describe V3–V8.
+
 V3 seeds only Catan metadata and one active English 5th Edition default. This is a selected
 reference configuration, not a rulebook, supported rules-Q&A feature, or latest-edition claim.
 Release year is unspecified; no commercial rules content is included.

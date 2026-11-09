@@ -1,0 +1,14 @@
+.git
+.gradle
+.idea
+.vscode
+build
+out
+*.iml
+.env
+.env.*
+local-rules
+Claude outputs
+docs
+examples
+compose.yaml

@@ -38,7 +38,7 @@ import org.testcontainers.utility.DockerImageName;
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class GameCatalogIntegrationTest {
-    private static final String CATAN = "00000000-0000-0000-0000-000000000001";
+    private static final String REFERENCE_GAME = "00000000-0000-0000-0000-000000000101";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
@@ -58,13 +58,13 @@ class GameCatalogIntegrationTest {
 
     @Test
     void referenceGameHasOneDefaultAndOpenApiDescribesCatalog() throws Exception {
-        var game = json(request("GET", "/api/v1/games/" + CATAN, null), 200);
-        assertThat(game.path("slug").asText()).isEqualTo("catan");
-        var version = json(request("GET", "/api/v1/games/" + CATAN + "/default-version?playerCount=4", null), 200);
-        assertThat(version.path("edition").asText()).isEqualTo("5th Edition");
+        var game = json(request("GET", "/api/v1/games/" + REFERENCE_GAME, null), 200);
+        assertThat(game.path("slug").asText()).isEqualTo("ticket-to-ride");
+        var version = json(request("GET", "/api/v1/games/" + REFERENCE_GAME + "/default-version?playerCount=4", null), 200);
+        assertThat(version.path("edition").asText()).isEqualTo("2025 Edition");
         assertThat(version.path("language").asText()).isEqualTo("en");
         assertThat(version.path("defaultVersion").asBoolean()).isTrue();
-        assertThat(json(request("GET", "/api/v1/games/" + CATAN + "/versions", null), 200)).hasSize(1);
+        assertThat(json(request("GET", "/api/v1/games/" + REFERENCE_GAME + "/versions", null), 200)).hasSize(1);
         var list = json(request("GET", "/api/v1/games?size=1", null), 200);
         assertThat(list.path("items")).hasSize(1);
         assertThat(list.path("size").asInt()).isEqualTo(1);
@@ -121,8 +121,8 @@ class GameCatalogIntegrationTest {
 
     @Test
     void invalidPlayerCountAndUnavailableDefaultsFailClearly() throws Exception {
-        error(request("GET", "/api/v1/games/" + CATAN + "/default-version?playerCount=2", null), 400, "INVALID_PLAYER_COUNT");
-        error(request("GET", "/api/v1/games/" + CATAN + "/default-version?playerCount=5", null), 400, "INVALID_PLAYER_COUNT");
+        error(request("GET", "/api/v1/games/" + REFERENCE_GAME + "/default-version?playerCount=1", null), 400, "INVALID_PLAYER_COUNT");
+        error(request("GET", "/api/v1/games/" + REFERENCE_GAME + "/default-version?playerCount=6", null), 400, "INVALID_PLAYER_COUNT");
         String noDefault = createGame();
         error(request("GET", "/api/v1/games/" + noDefault + "/default-version", null), 409, "DEFAULT_VERSION_NOT_CONFIGURED");
         var payload = gamePayload();
@@ -156,13 +156,13 @@ class GameCatalogIntegrationTest {
         error(request("GET", "/api/v1/games/not-a-uuid", null), 400, "INVALID_REQUEST");
         error(request("GET", "/api/v1/games?page=-1", null), 400, "INVALID_PAGINATION");
         error(request("GET", "/api/v1/games?size=101", null), 400, "INVALID_PAGINATION");
-        error(request("PUT", "/api/v1/games/" + CATAN + "/default-version", Map.of()), 400, "INVALID_REQUEST");
+        error(request("PUT", "/api/v1/games/" + REFERENCE_GAME + "/default-version", Map.of()), 400, "INVALID_REQUEST");
         var version = versionPayload("First", true, false);
         version.put("releaseYear", 0);
-        error(request("POST", "/api/v1/games/" + CATAN + "/versions", version), 400, "INVALID_REQUEST");
+        error(request("POST", "/api/v1/games/" + REFERENCE_GAME + "/versions", version), 400, "INVALID_REQUEST");
         version.put("releaseYear", 2020);
         version.put("language", "English");
-        error(request("POST", "/api/v1/games/" + CATAN + "/versions", version), 400, "INVALID_REQUEST");
+        error(request("POST", "/api/v1/games/" + REFERENCE_GAME + "/versions", version), 400, "INVALID_REQUEST");
         error(request("GET", "/api/v1/games/" + UUID.randomUUID(), null), 404, "GAME_NOT_FOUND");
         error(request("POST", "/api/v1/games/" + UUID.randomUUID() + "/versions", versionPayload("First", true, false)),
                 404, "GAME_NOT_FOUND");
@@ -221,10 +221,11 @@ class GameCatalogIntegrationTest {
         upgradeJdbc.execute("CREATE TABLE bootstrap_marker (value TEXT NOT NULL)");
         upgradeJdbc.update("INSERT INTO bootstrap_marker VALUES ('preserved')");
         var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(8);
         upgrade.validate();
         assertThat(upgradeJdbc.queryForObject("SELECT value FROM bootstrap_marker", String.class)).isEqualTo("preserved");
-        assertThat(upgradeJdbc.queryForObject("SELECT count(*) FROM games WHERE slug = 'catan'", Integer.class)).isEqualTo(1);
+        assertThat(upgradeJdbc.queryForObject("SELECT count(*) FROM games WHERE slug = 'ticket-to-ride'", Integer.class)).isEqualTo(1);
+        assertThat(upgradeJdbc.queryForObject("SELECT count(*) FROM games WHERE slug = 'catan'", Integer.class)).isZero();
         assertThat(upgrade.migrate().migrationsExecuted).isZero();
     }
 

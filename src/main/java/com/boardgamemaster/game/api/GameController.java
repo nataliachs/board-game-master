@@ -30,7 +30,8 @@ public class GameController {
     @Operation(summary = "Register a game")
     public ResponseEntity<GameResponse> create(@Valid @RequestBody CreateGame request) {
         var game = service.createGame(request.slug(), request.name(), request.publisher(), request.minPlayers(),
-                request.maxPlayers(), request.estimatedDurationMinutes(), request.description(), request.active());
+                request.maxPlayers(), request.estimatedDurationMinutes(), request.description(), request.active(),
+                request.category(), request.coverImageUrl());
         return ResponseEntity.created(URI.create("/api/v1/games/" + game.getId())).body(GameResponse.from(game));
     }
 
