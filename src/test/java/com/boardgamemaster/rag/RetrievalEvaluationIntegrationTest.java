@@ -74,7 +74,7 @@ class RetrievalEvaluationIntegrationTest {
     @Test void evaluatesCheckedInDatasetSeparatelyFromGenerationAndWritesDiagnostics() throws Exception {
         JsonNode dataset;
         try (var input = getClass().getResourceAsStream("/evaluation/catan-rule-questions.json")) { dataset = mapper.readTree(input); }
-        UUID game = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID game = UUID.fromString("00000000-0000-0000-0000-000000000101");
         UUID version = version(game, "en", false);
         UUID otherEdition = version(game, "en", false);
         UUID otherGame = version(game(), "en", false);

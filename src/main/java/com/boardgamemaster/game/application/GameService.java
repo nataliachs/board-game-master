@@ -40,10 +40,26 @@ public class GameService {
     @Transactional
     public Game createGame(String slug, String name, String publisher, int minPlayers, int maxPlayers,
             int estimatedDurationMinutes, String description, boolean active) {
-        Game game = new Game(slug, name, publisher, minPlayers, maxPlayers, estimatedDurationMinutes, description, active);
+        return createGame(slug, name, publisher, minPlayers, maxPlayers, estimatedDurationMinutes, description, active, null, null);
+    }
+
+    @Transactional
+    public Game createGame(String slug, String name, String publisher, int minPlayers, int maxPlayers,
+            int estimatedDurationMinutes, String description, boolean active, String category, String coverImageUrl) {
+        Game game = new Game(slug, name, publisher, minPlayers, maxPlayers, estimatedDurationMinutes, description, active,
+                category, coverImageUrl);
         if (games.existsBySlug(game.getSlug())) {
             throw new CatalogException(GAME_SLUG_EXISTS, "A game with this slug already exists");
         }
+        return games.saveAndFlush(game);
+    }
+
+    @Transactional
+    public Game updateGameDetails(UUID gameId, String name, String publisher, int minPlayers, int maxPlayers,
+            int estimatedDurationMinutes, String description, boolean active, String category, String coverImageUrl) {
+        Game game = getGame(gameId);
+        game.updateDetails(name, publisher, minPlayers, maxPlayers, estimatedDurationMinutes, description, active,
+                category, coverImageUrl);
         return games.saveAndFlush(game);
     }
 

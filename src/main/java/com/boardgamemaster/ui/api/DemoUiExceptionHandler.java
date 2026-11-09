@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@ControllerAdvice(assignableTypes = DemoUiController.class)
+@ControllerAdvice(assignableTypes = {DemoUiController.class, AdminUiController.class})
 public class DemoUiExceptionHandler {
     private static final Logger LOG = LoggerFactory.getLogger(DemoUiExceptionHandler.class);
     @ExceptionHandler(Exception.class)

@@ -1,17 +1,81 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Board Game Master · Choose a game</title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script></head>
-<body><header th:replace="~{fragments :: header}"></header><main class="home-layout">
-  <section class="intro"><p class="eyebrow">A place at the table</p><h1>Your next game<br>starts here.</h1><p class="lead">Learn one lesson at a time, prepare your table, and keep a Game Master nearby for the questions along the way.</p><div class="journey"><span>Learn</span><span>Set up</span><span>Play</span></div></section>
-  <section class="card start-card"><h2>Choose your game</h2><div th:replace="~{fragments :: alerts}"></div>
-    <p th:if="${#lists.isEmpty(games)}" class="muted">No active games on this page. Try another page or register a supported game through the catalog API.</p>
-    <form th:if="${!#lists.isEmpty(games)}" action="/ui/sessions" method="post">
-      <label for="game">Game</label><select id="game" name="gameId" required><option th:each="game : ${games}" th:value="${game.id}" th:text="${game.name}"></option></select>
-      <label for="players">Players</label><input id="players" name="playerCount" type="number" min="1" max="100" value="4" required>
-      <label for="depth">Teaching style</label><select id="depth" name="teachingDepth"><option value="QUICK">Quick · the essentials</option><option value="STANDARD" selected>Standard · a comfortable pace</option><option value="DETAILED">Detailed · examples and extra guidance</option></select>
-      <label th:if="${voice.outputEnabled}" class="checkbox-label"><input id="spoken-guidance-choice" type="checkbox">Speak explanations <span class="muted small">Uses the configured AI voice.</span></label>
-      <button class="primary wide" type="submit">Start game <span aria-hidden="true">→</span></button>
-    </form>
-    <nav class="actions" aria-label="Game pages"><a th:if="${gamePage > 0}" th:href="@{/(page=${gamePage - 1})}">Previous games</a><a th:if="${hasNext}" th:href="@{/(page=${gamePage + 1})}">More games</a></nav>
-    <p class="muted small">Lessons and setup work without AI keys. Rule questions need indexed sources and configured providers.</p>
-  </section>
-</main><footer>Made for curious players. Keep your physical rules nearby.</footer></body></html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Board Game Master · Choose a game</title><link rel="stylesheet" href="/css/demo.css"><script src="/js/library.js" defer></script><script src="/js/narration.js" defer></script></head>
+<body><header th:replace="~{fragments :: header}"></header>
+<section class="hero" aria-labelledby="hero-title">
+  <svg class="hero-pattern" width="560" height="420" viewBox="0 0 560 420" aria-hidden="true"><g fill="none" stroke="#F0B43C" stroke-width="2"><path d="M100 20 170 60v80l-70 40-70-40V60Z"/><path d="M240 20 310 60v80l-70 40-70-40V60Z"/><path d="M380 20 450 60v80l-70 40-70-40V60Z"/><path d="M170 140 240 180v80l-70 40-70-40v-80Z"/><path d="M310 140 380 180v80l-70 40-70-40v-80Z"/><path d="M450 140 520 180v80l-70 40-70-40v-80Z"/><path d="M240 260 310 300v80l-70 40-70-40v-80Z"/><path d="M380 260 450 300v80l-70 40-70-40v-80Z"/></g></svg>
+  <div class="hero-inner">
+    <p class="eyebrow">A seat at the table</p>
+    <h1 id="hero-title">Learn any game.<br><span>Start playing in minutes.</span></h1>
+    <p class="lead">Short lessons, guided table setup, and a Game Master who answers rule questions with the page to prove it.</p>
+    <ol class="journey" aria-label="How a session works"><li><span class="dot">1</span>Learn</li><li><span class="dot">2</span>Set up</li><li><span class="dot">3</span>Play</li></ol>
+  </div>
+</section>
+
+<main class="library" id="library">
+  <div th:replace="~{fragments :: alerts}"></div>
+  <div class="library-head">
+    <div><p class="eyebrow">Step 1 · Pick a game</p><h2>What are we playing?</h2></div>
+    <div class="library-search" th:if="${!#lists.isEmpty(games)}"><label for="game-search">Search the library</label><input id="game-search" type="search" placeholder="Game name" autocomplete="off"></div>
+  </div>
+
+  <div class="library-tools" id="library-tools" hidden th:if="${!#lists.isEmpty(games)}">
+    <span class="tools-label">Filter</span>
+    <span id="category-filters"></span>
+    <button type="button" class="chip fits" id="fits-players" aria-pressed="false">Fits my player count</button>
+  </div>
+
+  <p th:if="${#lists.isEmpty(games)}" class="empty-results">No active games on this page. Try another page or register a supported game through the catalog API.</p>
+
+  <form th:if="${!#lists.isEmpty(games)}" class="library-layout" action="/ui/sessions" method="post">
+    <section class="game-results" aria-labelledby="results-title">
+      <h3 id="results-title" class="result-count" aria-live="polite"><span id="result-count" th:text="${#lists.size(games)}"></span> <span id="result-label" th:text="${#lists.size(games) == 1 ? 'game' : 'games'}"></span></h3>
+      <fieldset class="game-grid" id="game-grid">
+        <legend class="sr-only">Game</legend>
+        <label class="game-card" th:each="game, iter : ${games}"
+            th:attr="data-name=${#strings.toLowerCase(game.name)},data-category=${game.category},data-min=${game.minPlayers},data-max=${game.maxPlayers}">
+          <input type="radio" name="gameId" required th:value="${game.id}" th:checked="${iter.first}"
+              th:attr="data-name=${game.name},data-min=${game.minPlayers},data-max=${game.maxPlayers},data-duration=${game.estimatedDurationMinutes},data-category=${game.category},data-description=${game.description},data-cover=${game.coverImageUrl},data-initials=${game.initials()},data-cover-class=${'cover-' + (iter.index % 6)}">
+          <span class="cover" th:classappend="${'cover-' + (iter.index % 6)}" aria-hidden="true">
+            <img th:if="${game.coverImageUrl != null}" th:src="${game.coverImageUrl}" alt="">
+            <span th:if="${game.coverImageUrl == null}" th:text="${game.initials()}"></span>
+          </span>
+          <span class="game-info">
+            <span class="game-name" th:text="${game.name}"></span>
+            <span class="game-meta" th:text="${(game.minPlayers == game.maxPlayers ? game.minPlayers : game.minPlayers + '–' + game.maxPlayers) + ' players · about ' + game.estimatedDurationMinutes + ' min'}"></span>
+            <span class="tag" th:if="${game.category != null}" th:text="${game.category}"></span>
+          </span>
+          <span class="selected-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="#A8442A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </label>
+      </fieldset>
+      <p class="empty-results" id="no-results" hidden>No games match. Try another search or filter.</p>
+      <nav class="paging" aria-label="Game pages"><a th:if="${gamePage > 0}" th:href="@{/(page=${gamePage - 1})}">Previous games</a><a th:if="${hasNext}" th:href="@{/(page=${gamePage + 1})}">More games</a></nav>
+    </section>
+
+    <aside class="card table-panel" aria-labelledby="selected-name" th:with="first=${games[0]}">
+      <div class="panel-cover cover-0" id="panel-cover" aria-hidden="true">
+        <img th:if="${first.coverImageUrl != null}" th:src="${first.coverImageUrl}" alt="">
+        <span th:if="${first.coverImageUrl == null}" th:text="${first.initials()}"></span>
+      </div>
+      <div class="panel-body">
+        <p class="eyebrow">Step 2 · Your table</p>
+        <h2 id="selected-name" th:text="${first.name}"></h2>
+        <p class="panel-meta" id="selected-meta" th:text="${first.minPlayers + '–' + first.maxPlayers + ' players · about ' + first.estimatedDurationMinutes + ' min' + (first.category != null ? ' · ' + first.category : '')}"></p>
+        <p class="panel-description" id="selected-description" th:text="${first.description}"></p>
+        <label for="players">Players</label>
+        <input id="players" name="playerCount" type="number" required th:attr="min=${first.minPlayers},max=${first.maxPlayers}"
+            th:value="${first.maxPlayers < 4 ? first.maxPlayers : (first.minPlayers > 4 ? first.minPlayers : 4)}">
+        <fieldset class="depth-options">
+          <legend>Teaching style</legend>
+          <div class="depth-grid">
+            <label class="depth-option"><input type="radio" name="teachingDepth" value="QUICK">Quick<span>The essentials</span></label>
+            <label class="depth-option"><input type="radio" name="teachingDepth" value="STANDARD" checked>Standard<span>A comfortable pace</span></label>
+            <label class="depth-option"><input type="radio" name="teachingDepth" value="DETAILED">Detailed<span>Examples and tips</span></label>
+          </div>
+        </fieldset>
+        <label th:if="${voice.outputEnabled}" class="checkbox-label"><input id="spoken-guidance-choice" type="checkbox">Read lessons aloud <span class="muted small">Uses the configured AI voice.</span></label>
+        <button class="primary wide" type="submit">Start game <span aria-hidden="true">→</span></button>
+        <p class="panel-note">Lessons and setup work without AI keys. Rule questions need indexed sources and configured providers.</p>
+      </div>
+    </aside>
+  </form>
+</main><footer>Made for curious players. Keep your printed rules nearby. Game names and cover art belong to their publishers.</footer></body></html>

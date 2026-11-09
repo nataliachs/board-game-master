@@ -11,8 +11,9 @@ is the default depth. Questions preserve the current lesson and setup step.
 **Milestone 8 — Voice + Minimal Demo UI: implemented.**
 
 All nine milestones are implemented. Current follow-up work focuses on answer relevance,
-contextual questions and citation quality. The latest full check passed **483 tests**
-(376 unit and 107 PostgreSQL/pgvector integration tests) with mock providers.
+contextual questions and citation quality. The latest full check (2026-11-07) passed **502 tests**
+(393 unit and 109 PostgreSQL/pgvector integration tests) with mock providers. After the
+2026-11-09 filter fix, all 504 pass (395 unit, 109 integration).
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
 The latest precise-citation retest passed for the reported exchange. Relevance/support review
@@ -33,6 +34,98 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Admin and rate-limit path bypass fix — 2026-11-09
+
+`AdminAccessFilter` and `PaidRequestLimitFilter` matched on the raw `getRequestURI()`, while
+Spring MVC routes on a decoded path without `;parameters`. Requests such as `/admin;x`,
+`/%61dmin`, `//admin` or a POST to `/api/v1/games;x` skipped the password check yet reached the
+protected controllers, and similar paths skipped the AI request caps. Both filters now match on
+`RequestPaths.normalized` (Spring's `UrlPathHelper`: decoded, path parameters removed, repeated
+slashes collapsed). New unit tests send disguised paths through each filter; they fail against
+the old raw-URI check and pass with the fix.
+
+Known limitation: with `forward-headers-strategy: framework`, the per-client hourly cap keys on
+the leftmost `X-Forwarded-For` value, which clients can set, so it can be evaded. The app-wide
+daily cap and a spending limit at the AI provider are the effective guards.
+
+Validation: `gradlew.bat check bootJar` passed and built the JAR: 395 unit tests and 109
+PostgreSQL/pgvector integration tests (forced rerun), zero failures or errors.
+
+## Google Cloud deployment support — 2026-11-07
+
+Added a two-stage `Dockerfile` (Temurin 21, non-root runtime), `.dockerignore`, `.gcloudignore` and
+[DEPLOY_GCP.md](DEPLOY_GCP.md) for Cloud Run with Cloud SQL for PostgreSQL 17 (pgvector) and
+Secret Manager in `asia-southeast2`. The Cloud SQL JDBC socket factory (1.30.2) is a runtime
+dependency, used only when `DB_URL` names a `cloudSqlInstance`. The `prod` profile now trusts
+forwarded headers, requires an admin password, and caps AI requests.
+
+`AdminAccessFilter` puts HTTP Basic auth on `/admin` and on content-changing APIs under
+`/api/v1/games` and `/api/v1/game-versions`; without a password it stays open locally and refuses
+those requests in `prod`. `PaidRequestLimitFilter` caps question, voice and narration requests per
+client per hour and per day (in memory; off unless configured). Unit tests cover both filters.
+Not deployed. The build and tests were later run locally (see the current milestone summary).
+
+## Local admin area — 2026-11-07
+
+Added `/admin` pages (Thymeleaf, no JavaScript) for adding a game and its default version, editing
+game details and covers, writing setup steps and lessons, and uploading and indexing `.txt`/`.md`
+rule sources. `AdminUiService` only translates form rows into the existing catalog, setup, teaching
+and rule services, so publishing stays append-only and existing sessions keep their pinned flows.
+Friendly validation keeps typed rows after a rejected save. `Game.updateDetails` and
+`GameService.updateGameDetails` add metadata editing; the slug stays fixed. Admin pages use the
+same CSP, no-store and cross-site POST protection as the other demo pages. `AdminAccessFilter`
+(see Google Cloud deployment support) adds HTTP Basic auth when `ADMIN_PASSWORD` is set; without
+it the admin area is open locally and refused in `prod`. Instructions: [admin guide](ADMIN_GUIDE.md).
+
+Tests: `AdminUiServiceTest` (slugs and keys) and a browser-level admin journey in
+`BootstrapIntegrationTest` (create, setup, a rejected lesson save, lessons, then a playable session).
+These passed in the 2026-11-07 local run.
+
+## Daylight café UI, game library and Ticket to Ride reference — 2026-11-07
+
+Restyled every page (home, session, setup, review, error) with the "Daylight café" palette:
+espresso header, terracotta primary actions, honey accents and a stage tracker. The home page
+is now a game library: searchable cards, category and player-count filters (presentation-only
+`library.js`, with a no-JavaScript fallback), and a side panel for players, teaching depth and
+start. The session page shows the learning path as a track of spaces, the lesson or setup card,
+and a Game Master panel holding questions, voice and the conversation. All element IDs used by
+`narration.js` and `voice.js` are unchanged, and every style remains in `demo.css` for the CSP.
+
+Catalog changes: V8 adds optional `category` and `cover_image_url` columns (https:// URL or a
+path starting with `/`), exposed in the catalog API; cards without a cover show generated
+initials. The CSP now allows `img-src 'self' https:` for remote covers. V9 makes Ticket to Ride
+(2025 Edition) the reference game: it deletes the Catan seed and anything attached to its version
+(sessions, history, rule documents, chunks, vectors), keeps other games, and seeds Ticket to Ride
+with twelve lessons (QUICK 9, STANDARD 11, DETAILED 12) and seven setup steps. The text is original
+beginner guidance checked against the 2025 rules booklet; no rulebook is bundled or indexed.
+
+Tests: reference-game tests now use Ticket to Ride IDs, player limits and lesson/step counts.
+Upgrade tests written for V4–V7 stop at V8 so they still prove those migrations preserve data;
+a new test covers V9 removing Catan while keeping a user-registered game. The retrieval
+evaluation keeps its `catan-rule-questions.json` fixture, now attached to new versions of the
+reference game.
+
+Validation: V2–V9 ran in one transaction each against a temporary PostgreSQL 16 database with a
+stand-in for the pgvector table, including an existing Catan session, message and a second game;
+V9 removed the Catan data, kept the second game and produced the expected counts. Hand-rendered
+copies of the home and session markup were checked in headless Chrome at 1366 px and 390 px.
+The Java build and test suites were not run here: Gradle could not be downloaded and Docker is
+unavailable. Run `.\gradlew.bat check bootJar` locally before merging.
+
+## Session UI clarity follow-up — 2026-10-27
+
+Added [UI guide](UI_GUIDE.md) for the teaching-first browser journey, screen priorities,
+visual rules and acceptance checks. The session template now shows lesson/setup progress
+as a labeled visual indicator, marks the current learning-path item for assistive technology,
+and gives the next step a clearer action group. CSS compacts the learning path on narrow
+screens and separates answer evidence from lesson content. Backend workflow, API and
+provider behavior were not changed.
+
+Validation: `git diff --check` passed; the guide has no trailing whitespace, and the
+template contains the expected two progress indicators and two action groups. Browser
+rendering and automated Java tests were not run in this environment: the available Java
+command did not complete, and the local application port was inaccessible.
 
 ## Portfolio presentation and fresh local check — 2026-10-09
 

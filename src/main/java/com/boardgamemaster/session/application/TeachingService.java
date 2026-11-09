@@ -28,4 +28,9 @@ public class TeachingService {
         versions.findById(version).orElseThrow(() -> new CatalogException(CatalogException.Code.GAME_VERSION_NOT_FOUND, "Game version was not found"));
         return repository.latestFlow(version);
     }
+    /** The newest flow, or empty when none was published yet; never marks the caller's transaction for rollback. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<TeachingFlow> findCurrent(UUID version) {
+        return repository.findLatestFlow(version);
+    }
 }

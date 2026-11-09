@@ -6,17 +6,17 @@ This is my Java/Spring Boot project for a board game assistant that teaches the 
 walks players through setup, and stays available for questions during the game. The aim is
 for someone to choose a game and learn it step by step, without already knowing what to ask.
 
-The backend supports multiple games. Catan is the initial reference dataset; game rules,
+The backend supports multiple games. Ticket to Ride (2025 edition) is the reference dataset; game rules,
 teaching content and setup steps are stored as data rather than built into shared services.
 
-[Try it locally](#local-setup) · [Engineering decisions](#why-i-built-it-this-way) ·
+[Try it locally](#local-setup) · [Deploy to Google Cloud](docs/DEPLOY_GCP.md) · [Engineering decisions](#why-i-built-it-this-way) ·
 [Tests and CI](#running-database-application-and-tests) · [Demo recording guide](docs/DEMO.md)
 
 ![The browser demo: choose a game, player count and teaching depth before starting.](docs/images/browser-demo.jpg)
 
 *The actual local start screen. Teaching and setup work without an AI key; cited answers and
 speech are optional integrations. The screenshot comes from an existing local catalog;
-a fresh database includes Catan reference content.*
+a fresh database includes the Ticket to Ride reference content.*
 
 ## Current state
 
@@ -31,8 +31,9 @@ benchmark. Relevance and answer-support review remain experimental; live speech 
 broader RAG evaluation still need testing. See [development status](docs/DEVELOPMENT_STATUS.md)
 for the results, failed cases and remaining limitations.
 
-Catan has seeded metadata for an English 5th Edition version and introductory teaching/setup
-content. Its commercial rulebook is not bundled or indexed. Rule questions require permitted
+Ticket to Ride has seeded metadata for an English 2025 Edition version and introductory teaching/setup
+content written for this project. Its commercial rulebook is not bundled or indexed. Catan was the
+reference game until V9, which replaced it. Rule questions require permitted
 source documents, generated embeddings and explicitly enabled AI providers.
 
 - [Product requirements](PROJECT_SPEC.md)
@@ -158,11 +159,11 @@ EMBEDDING_PROVIDER=disabled LLM_PROVIDER=disabled STT_PROVIDER=disabled TTS_PROV
   sh ./gradlew bootRun
 ```
 
-Open [the browser demo](http://localhost:8080/), choose **Catan**, four players and **STANDARD**,
+Open [the browser demo](http://localhost:8080/), choose **Ticket to Ride**, four players and **STANDARD**,
 and leave **Speak explanations** unchecked. Choose **Start game**, read a lesson, and continue
 to **Start guided setup**. Follow the setup steps, return to the saved lesson, and finish
 teaching to reach PLAYING. Review the rules or end the session from the same page.
-This demonstrates the workflow using introductory content; it is not a complete Catan tutorial.
+This demonstrates the workflow using introductory content; it is not a complete Ticket to Ride tutorial.
 
 The [health endpoint](http://localhost:8080/actuator/health) should report `UP`.
 [Swagger](http://localhost:8080/swagger-ui/index.html) is available for exploring the APIs,
@@ -259,6 +260,9 @@ their stored vectors, and unindexed documents require explicit indexing.
 V6 adds sessions, conversation history and version-bound teaching, including original introductory
 Catan lessons. V7 adds setup flows/steps, persisted session setup progress and a setup trigger
 in a new reference teaching flow. Existing lessons, sessions, history, documents and vectors are retained.
+V8 adds optional game `category` and `cover_image_url` columns. V9 replaces the Catan reference game with
+Ticket to Ride: it deletes the Catan seed together with its sessions, history and any rule documents or vectors
+attached to its version, then adds Ticket to Ride with lessons and guided setup. Other games are not changed.
 
 ```powershell
 .\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
@@ -329,11 +333,11 @@ After restarting the application, demonstrate the seeded data in PowerShell:
 
 ```powershell
 Invoke-RestMethod 'http://localhost:8080/api/v1/games'
-$catanId = '00000000-0000-0000-0000-000000000001'
-Invoke-RestMethod "http://localhost:8080/api/v1/games/$catanId/versions"
-Invoke-RestMethod "http://localhost:8080/api/v1/games/$catanId/default-version?playerCount=4"
+$referenceId = '00000000-0000-0000-0000-000000000101'
+Invoke-RestMethod "http://localhost:8080/api/v1/games/$referenceId/versions"
+Invoke-RestMethod "http://localhost:8080/api/v1/games/$referenceId/default-version?playerCount=4"
 
-# playerCount=2 returns HTTP 400 with code INVALID_PLAYER_COUNT.
+# playerCount=6 returns HTTP 400 with code INVALID_PLAYER_COUNT.
 
 ```
 
@@ -365,9 +369,8 @@ Invoke-RestMethod "http://localhost:8080/api/v1/games/$($game.id)/default-versio
 Errors retain the shared `code`, `message`, `timestamp`, and `path` fields. Invalid bodies,
 player counts, and pagination return 400; unknown games or versions belonging to another
 game return 404; duplicates and unavailable default configurations return 409.
-Catan's 90-minute duration is a demo estimate. The selected edition is a reference configuration,
-not a claim to be the latest edition or to have ingested its rules. Player counts follow
-[CATAN's base-game metadata](https://www.catan.com/catan).
+Ticket to Ride's 60-minute duration is the upper end of the box estimate. The edition is a reference
+configuration, not a claim to have ingested its rules. Player counts follow the 2025 rules booklet.
 
 ## Implemented rule-document API
 
@@ -405,7 +408,7 @@ links to the owning game and edition. Imports store all chunks in one transactio
 
 For a safe manual demo, first register a **Demo Game** and English version using the catalog
 example above, then resolve that game's default version. Do not attach fictional demo rules
-to the Catan reference version. From the repository root in PowerShell:
+to the Ticket to Ride reference version. From the repository root in PowerShell:
 
 ```powershell
 
@@ -781,11 +784,10 @@ are disabled, the existing `EMBEDDING_NOT_CONFIGURED` error still applies.
 ## Implemented sessions and teaching API
 
 Restart the application to apply V6 and V7. Existing content and sessions are preserved.
-The new Catan reference teaching flow has eleven concise sections: QUICK selects eight,
-STANDARD ten and DETAILED eleven, including PHYSICAL_SETUP at every depth. It is an introductory
-overview, not a complete commercial rulebook. Six authored setup steps record the user's confirmation;
-the application cannot inspect the physical board. If a custom Catan teaching flow was already
-published, V7 preserves it as the current flow instead of replacing it.
+Since V9 the reference teaching flow is Ticket to Ride: twelve concise sections, of which QUICK selects nine,
+STANDARD eleven and DETAILED twelve, including PHYSICAL_SETUP at every depth. It is an introductory
+overview, not a complete commercial rulebook. Seven authored setup steps record the user's confirmation;
+the application cannot inspect the physical board.
 Teaching/navigation require no provider keys, indexing or paid calls.
 
 Create a session in Swagger or PowerShell:
@@ -843,7 +845,7 @@ The response contains `sessionId`, new `revision`, `currentSectionKey` and the e
 `answer`/confidence/sources contract. Successful answers and LOW fallbacks persist an atomic
 USER/ASSISTANT pair, including source citations. Provider failures persist neither message and
 leave workflow state unchanged. Live Q&A still requires explicitly configured embedding/LLM
-providers and indexed permitted documents for the pinned version. The seeded Catan lessons are
+providers and indexed permitted documents for the pinned version. The seeded Ticket to Ride lessons are
 not automatically imported or indexed as rule evidence. With providers disabled, Q&A returns
 the existing safe 503 errors; teaching continues to work.
 
@@ -995,12 +997,11 @@ these results; broader evaluation remains deferred. See the browser and voice de
 ## Implemented guided setup API
 
 Restart the application to apply V7; retain the existing database volume. No new environment
-variables or provider keys are needed for setup. In Swagger, create a Catan session, Continue
-through INTRODUCTION, OBJECTIVE and COMPONENTS to PHYSICAL_SETUP, then Continue again to enter
-SETUP. `GET /api/v1/sessions/{id}/setup` now displays BOARD, step 1 of 6, including notes/warnings.
-The reference text is original, concise beginner guidance checked against the
-[official CATAN base-game rules, pages 2–4](https://www.catan.com/sites/default/files/2021-06/catan_base_rules_2020_200707.pdf).
-Use the physical 5th Edition beginner diagram; diagrams and commercial rulebook files are not bundled.
+variables or provider keys are needed for setup. In Swagger, create a Ticket to Ride session, Continue
+through INTRODUCTION and OBJECTIVE to PHYSICAL_SETUP, then Continue again to enter
+SETUP. `GET /api/v1/sessions/{id}/setup` now displays BOARD, step 1 of 7, including notes/warnings.
+The reference text is original, concise beginner guidance checked against the Ticket to Ride
+rules booklet (Days of Wonder, 2025). Commercial rulebook files are not bundled.
 The text records confirmation rather than detecting board state, and is not an indexed Q&A source.
 
 Every POST below accepts `{ "expectedRevision": <latest session revision> }`:
@@ -1039,7 +1040,7 @@ These questions may incur provider charges. A provider failure stores no partial
 in-flight answer loses a revision race with setup navigation/restart and returns 409 without history.
 
 For another game, publish setup content before a teaching flow containing a trigger. Using the
-Lantern Trail `$version.id` and `$game.id` from the earlier demo (never the Catan reference IDs):
+Lantern Trail `$version.id` and `$game.id` from the earlier demo (never the Ticket to Ride reference IDs):
 
 ```powershell
 $flow = @{
@@ -1098,6 +1099,15 @@ Phase 4 = Milestone 7; Phase 5 = Milestone 8. These milestones are implemented; 
 
 Register Game and GameVersion, import permitted rules, generate embeddings, configure version-bound TeachingFlow/TeachingSection and SetupFlow/SetupStep data, add retrieval evaluation cases, and activate the supported version. Shared engines should require no redesign.
 
+The easiest way to add a game is the local admin area at `/admin`; see the
+[admin guide](docs/ADMIN_GUIDE.md) for step-by-step instructions.
+
+Games may also carry an optional `category` (used by the library filters) and `coverImageUrl`.
+A cover can be an `https://` URL or an application path such as `/images/covers/azul.jpg`
+(files under `src/main/resources/static/images/covers/`). Games without a cover show a
+generated initials tile. Game names and cover art belong to their publishers; this is a
+non-commercial portfolio project.
+
 ## Demo UI
 
 The lightweight browser interface allows a user to:
@@ -1127,7 +1137,7 @@ and retention policies remain future work.
 
 1. Follow [Local setup](#local-setup), including its process-only overrides that disable all
    AI providers. Keep your existing private `.env`; do not overwrite it with the example.
-2. Open [the browser demo](http://localhost:8080/). Select Catan, four players and STANDARD,
+2. Open [the browser demo](http://localhost:8080/). Select Ticket to Ride, four players and STANDARD,
    then choose **Start game**. Catalog entries come from the database.
 3. Use **Continue**, **Previous**, **Repeat** or **Explain again**. At the setup lesson,
    **Start guided setup** opens the saved setup flow. Follow each instruction with your physical
@@ -1138,8 +1148,8 @@ and retention policies remain future work.
 5. Open **Review rules**, expand a reached lesson or setup step, and return to the session.
    Bookmark its URL to reopen it later. **End game** completes the session while keeping readable history.
 
-No AI provider is needed for these authored lessons, setup or review. Catan's original introductory
-guidance still requires the physical beginner diagram; commercial rules are not bundled or indexed.
+No AI provider is needed for these authored lessons, setup or review. The Ticket to Ride guidance is
+original introductory text; commercial rules are not bundled or indexed.
 Typed/voice rule answers require permitted indexed documents and configured embedding/LLM providers.
 If those are unavailable, the page shows an understandable error and keeps your place.
 

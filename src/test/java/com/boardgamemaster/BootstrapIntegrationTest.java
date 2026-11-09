@@ -45,7 +45,7 @@ class BootstrapIntegrationTest {
 
     @Test
     void migrationInstallsUsableVectorsAndIsRepeatable() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
         assertThat(jdbc.queryForObject("SELECT extversion FROM pg_extension WHERE extname = 'vector'",
                 String.class)).isNotBlank();
         assertThat(jdbc.queryForObject("SELECT '[1,2,3]'::vector <-> '[1,2,3]'::vector", Double.class))
@@ -84,8 +84,8 @@ class BootstrapIntegrationTest {
     void browserTeachingWorksWithAllAiProvidersDisabled() throws Exception {
         var home = get("/");
         assertThat(home.statusCode()).isEqualTo(200);
-        assertThat(home.body()).contains("Catan", "STANDARD\" selected");
-        String gameId = jdbc.queryForObject("SELECT id::text FROM games WHERE slug = 'catan'", String.class);
+        assertThat(home.body()).contains("Ticket to Ride", "value=\"STANDARD\" checked").doesNotContain("Catan");
+        String gameId = jdbc.queryForObject("SELECT id::text FROM games WHERE slug = 'ticket-to-ride'", String.class);
         try (HttpClient browser = HttpClient.newHttpClient()) {
             var created = browser.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ui/sessions"))
                     .header("Content-Type", "application/x-www-form-urlencoded")
@@ -96,8 +96,46 @@ class BootstrapIntegrationTest {
             assertThat(location.toString()).doesNotContain("jsessionid");
             var lesson = get(location.getPath());
             assertThat(lesson.statusCode()).isEqualTo(200);
-            assertThat(lesson.body()).contains("Lesson 1 of 10", "Voice input isn't enabled here", "id=\"question\"")
+            assertThat(lesson.body()).contains("Lesson 1 of 11", "Voice input isn't enabled here", "id=\"question\"")
                     .doesNotContain("id=\"speak\"", "id=\"upload-audio\"");
+            assertThat(lesson.body()).contains("Welcome to Ticket to Ride");
+        }
+    }
+
+    @Test
+    void adminPagesCreateAPlayableGameWithoutAiProviders() throws Exception {
+        assertThat(get("/admin").body()).contains("Your game library", "Ticket to Ride", "Add a game");
+        assertThat(get("/admin/games/new").statusCode()).isEqualTo(200);
+        var created = post("/admin/games", "name=Admin+Demo&minPlayers=2&maxPlayers=4&duration=20&category=Party&edition=Base+game&language=en");
+        assertThat(created.statusCode()).isEqualTo(302);
+        String editor = URI.create(created.headers().firstValue("Location").orElseThrow()).getPath();
+        String gameId = editor.substring(editor.lastIndexOf('/') + 1);
+        assertThat(jdbc.queryForObject("SELECT slug FROM games WHERE id = ?::uuid", String.class, gameId)).isEqualTo("admin-demo");
+
+        var setup = post(editor + "/setup", "stepOrder=1&stepTitle=Lay+out+cards&stepKey=&stepInstruction=Put+the+cards+face+down.&stepNotes=&stepWarnings="
+                + "&stepOrder=2&stepTitle=&stepKey=&stepInstruction=&stepNotes=&stepWarnings=");
+        assertThat(setup.statusCode()).isEqualTo(302);
+        String lessonRow = "&lessonKey=&lessonExamples=&lessonTips=&lessonReferences=";
+        var missingStyle = post(editor + "/lessons", "lessonOrder=1&lessonTitle=Welcome&lessonExplanation=Hello." + lessonRow + "&lessonQuick=0&setupTrigger=");
+        assertThat(missingStyle.statusCode()).isEqualTo(200);
+        assertThat(missingStyle.body()).contains("Every teaching style needs at least one lesson", "Welcome");
+        var lessons = post(editor + "/lessons", "lessonOrder=1&lessonTitle=Welcome&lessonExplanation=Hello." + lessonRow
+                + "&lessonOrder=2&lessonTitle=Set+up&lessonExplanation=Continue+to+set+up." + lessonRow
+                + "&lessonQuick=0&lessonStandard=0&lessonDetailed=0&lessonQuick=1&lessonStandard=1&lessonDetailed=1&setupTrigger=1");
+        assertThat(lessons.statusCode()).isEqualTo(302);
+        assertThat(get(editor).body()).contains("LAY_OUT_CARDS", "SET_UP", "Save lessons");
+        assertThat(get("/").body()).contains("Admin Demo");
+
+        var session = post("/ui/sessions", "gameId=" + gameId + "&playerCount=2");
+        assertThat(session.statusCode()).isEqualTo(302);
+        assertThat(get(URI.create(session.headers().firstValue("Location").orElseThrow()).getPath()).body()).contains("Welcome", "Lesson 1 of 2");
+    }
+
+    private HttpResponse<String> post(String path, String form) throws Exception {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            return client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(form)).build(), HttpResponse.BodyHandlers.ofString());
         }
     }
 

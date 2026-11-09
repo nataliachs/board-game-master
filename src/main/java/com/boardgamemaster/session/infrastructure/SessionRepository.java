@@ -22,9 +22,11 @@ public class SessionRepository {
     public SessionRepository(JdbcTemplate jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
 
     public TeachingFlow latestFlow(UUID version) {
+        return findLatestFlow(version).orElseThrow(() -> new SessionException(TEACHING_FLOW_NOT_FOUND, "No teaching flow is configured for this version"));
+    }
+    public Optional<TeachingFlow> findLatestFlow(UUID version) {
         var ids = jdbc.queryForList("SELECT id FROM teaching_flows WHERE game_version_id=? ORDER BY created_at DESC, id DESC LIMIT 1", UUID.class, version);
-        if (ids.isEmpty()) { throw new SessionException(TEACHING_FLOW_NOT_FOUND, "No teaching flow is configured for this version"); }
-        return flow(ids.getFirst());
+        return ids.isEmpty() ? Optional.empty() : Optional.of(flow(ids.getFirst()));
     }
     public TeachingFlow flow(UUID id) {
         var rows = jdbc.query("SELECT * FROM teaching_flows WHERE id=?", (r, n) -> new TeachingFlow(r.getObject("id", UUID.class),

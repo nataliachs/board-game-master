@@ -14,7 +14,9 @@ public final class GameRequests {
             @NotNull @Min(1) Integer maxPlayers,
             @NotNull @Min(1) Integer estimatedDurationMinutes,
             @Size(max = 4000) String description,
-            @NotNull Boolean active) { }
+            @NotNull Boolean active,
+            @Size(max = 40) String category,
+            @Size(max = 500) String coverImageUrl) { }
 
     public record CreateVersion(
             @NotBlank @Size(max = 100) String edition,

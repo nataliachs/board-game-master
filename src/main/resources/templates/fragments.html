@@ -1,19 +1,31 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org"><body>
-<header th:fragment="header" class="site-header"><a class="brand" href="/">Board Game Master</a><span class="eyebrow">Learn together. Play together.</span></header>
+<header th:fragment="header" class="site-header">
+  <div class="site-header-inner">
+    <a class="brand" href="/">
+      <svg width="34" height="34" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 2 32 10v16L18 34 4 26V10Z" fill="#F0B43C"/><circle cx="18" cy="14" r="4" fill="#3B2A22"/><path d="M11 26c0-4 3-7 7-7s7 3 7 7Z" fill="#3B2A22"/></svg>
+      Board Game Master
+    </a>
+    <nav class="site-nav" aria-label="Main"><span class="tagline">Learn together. Play together.</span><a href="/#library">Game library</a><a href="/admin">Admin</a></nav>
+  </div>
+</header>
+
 <div th:fragment="alerts" class="alerts" aria-live="polite"><p th:if="${error}" class="alert error" role="alert" th:text="${error}"></p><p th:if="${notice}" class="alert" th:text="${notice}"></p></div>
+
 <section th:fragment="conversation" id="conversation" class="card conversation" aria-labelledby="conversation-title">
   <h2 id="conversation-title">Your conversation</h2>
   <p th:if="${#lists.isEmpty(page.history)}" class="muted">Questions and answers will appear here. Asking a question keeps your place.</p>
   <article th:each="message : ${page.history}" class="message" th:classappend="${message.role.name() == 'USER' ? 'user-message' : 'assistant-message'}">
     <p class="eyebrow" th:text="${message.role.name() == 'USER' ? 'You' : 'Game Master'}"></p><p class="preserve" th:text="${message.content}"></p>
-    <div th:if="${message.answer != null}" class="answer-details"><p class="confidence" th:text="${'Evidence confidence: ' + message.answer.confidence}"></p>
+    <div th:if="${message.answer != null}" class="answer-details">
+      <p class="confidence" th:classappend="${'confidence-' + #strings.toLowerCase(message.answer.confidence.name())}"
+         th:text="${message.answer.confidence.name() == 'HIGH' ? 'High evidence' : (message.answer.confidence.name() == 'MEDIUM' ? 'Medium evidence' : 'Not verified by the rules')}"></p>
       <details th:if="${!#lists.isEmpty(message.answer.sources)}"><summary>View sources</summary>
         <article th:each="source : ${message.answer.sources}" class="citation"><strong th:text="${source.document}"></strong>
           <p><span th:text="${source.section}"></span><span th:if="${source.page != null}" th:text="${' · Page ' + source.page}"></span></p>
-          <blockquote th:text="${source.quote}"></blockquote><p class="muted" th:text="${source.sourceReference}"></p>
+          <blockquote th:text="${source.quote}"></blockquote><p class="muted small" th:text="${source.sourceReference}"></p>
         </article>
-      </details><p th:if="${message.answer.confidence.name() == 'LOW'}" class="muted">The available rules did not support a verified answer. Try a more specific question or check your printed rules.</p>
+      </details><p th:if="${message.answer.confidence.name() == 'LOW'}" class="muted small">The available rules did not support a verified answer. Try a more specific question or check your printed rules.</p>
     </div>
   </article>
   <a th:if="${page.olderCursor != null}" th:href="@{/sessions/{id}(id=${page.lesson.session.id},beforeSequence=${page.olderCursor})}">Older messages</a>

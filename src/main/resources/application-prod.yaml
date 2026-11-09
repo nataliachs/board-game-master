@@ -3,3 +3,16 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+server:
+  # Cloud Run terminates HTTPS; trust its forwarded headers so redirects stay on https.
+  forward-headers-strategy: framework
+boardgame:
+  admin:
+    # The admin area and content-write APIs refuse requests until ADMIN_PASSWORD is set.
+    required: true
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:}
+  paid-requests:
+    # Caps on requests that can call paid AI providers; 0 turns a cap off.
+    per-client-per-hour: ${PAID_REQUESTS_PER_CLIENT_PER_HOUR:20}
+    total-per-day: ${PAID_REQUESTS_PER_DAY:200}
