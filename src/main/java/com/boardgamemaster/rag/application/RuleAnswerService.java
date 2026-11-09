@@ -22,7 +22,7 @@ public class RuleAnswerService {
     private final EvidenceReviewService review;
     private enum FallbackReason {
         NO_RETRIEVED_EVIDENCE, PROMPT_BUDGET_EXCLUDED_EVIDENCE, NO_STRONG_EVIDENCE,
-        MODEL_INSUFFICIENT_EVIDENCE, UNKNOWN_CITATION, DUPLICATE_CITATION,
+        MODEL_INSUFFICIENT_EVIDENCE, UNKNOWN_CITATION,
         QUOTE_MISMATCH, WEAK_CITATION, NO_CITATIONS, NO_RELEVANT_EVIDENCE, ANSWER_SUPPORT_REJECTED
     }
     private record Rejection(FallbackReason reason, UUID chunkId) { }
@@ -105,7 +105,10 @@ public class RuleAnswerService {
             }
             var sources = new ArrayList<RuleAnswer.Source>();
             var cited = new HashSet<UUID>();
+            var seen = new HashSet<List<Object>>();
             for (var citation : generated.citations()) {
+                // An exact repeat of a passage and quote is shown once; different quotes from one passage are kept.
+                if (!seen.add(List.of(citation.chunkId(), citation.quote().strip()))) { continue; }
                 var match = prompt.evidence().stream().filter(m -> m.chunkId().equals(citation.chunkId())).findFirst().orElseThrow();
                 cited.add(citation.chunkId());
                 sources.add(new RuleAnswer.Source(match.chunkId(), match.documentId(), versionId, match.documentName(),
@@ -139,13 +142,11 @@ public class RuleAnswerService {
     private Rejection validate(RuleAnswerPromptBuilder.Prompt prompt, LlmResponse generated, int attempt) {
         if (!generated.sufficientEvidence()) { return new Rejection(FallbackReason.MODEL_INSUFFICIENT_EVIDENCE, null); }
         if (generated.citations().isEmpty()) { return new Rejection(FallbackReason.NO_CITATIONS, null); }
-        var cited = new HashSet<UUID>();
         Rejection quoteMismatch = null;
         for (var citation : generated.citations()) {
             var match = prompt.evidence().stream().filter(m -> m.chunkId().equals(citation.chunkId())).findFirst().orElse(null);
             // Other invalid evidence must not trigger a quote-only retry.
             if (match == null) { return new Rejection(FallbackReason.UNKNOWN_CITATION, citation.chunkId()); }
-            if (!cited.add(citation.chunkId())) { return new Rejection(FallbackReason.DUPLICATE_CITATION, citation.chunkId()); }
             if (!strongEnough(match.cosineSimilarity())) { return new Rejection(FallbackReason.WEAK_CITATION, citation.chunkId()); }
             if (quoteMismatch == null && SourceQuoteMatcher.find(match.content(), citation.quote()).isEmpty()) {
                 QuoteMismatchDiagnostics.log(prompt.evidence(), match, citation, attempt);

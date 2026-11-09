@@ -83,7 +83,10 @@ class RuleAnswerServiceTest {
                 .singleElement().asString().contains("reason=" + reason, "gameId=" + game, "gameVersionId=" + version);
     }
     private RuleVectorStore.Match match(double score) {
-        return new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, "Move one space.", "Original rules",
+        return match(score, "Move one space.");
+    }
+    private RuleVectorStore.Match match(double score, String content) {
+        return new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, content, "Original rules",
                 RuleSourceType.RULEBOOK, "1", "en", "Original test text", "Moving", 2, 0, 10, 25, score);
     }
     private void evidence(List<RuleVectorStore.Match> matches) {
@@ -206,13 +209,12 @@ class RuleAnswerServiceTest {
                 .anyMatch(m -> m.contains("Rule answer correction completed:") && m.contains("outcome=ACCEPTED"))
                 .noneMatch(m -> m.startsWith("Rule answer fallback:") || m.contains(rejected));
     }
-    @ParameterizedTest @ValueSource(strings = {"UNKNOWN_CITATION", "DUPLICATE_CITATION", "WEAK_CITATION", "MODEL_INSUFFICIENT_EVIDENCE", "QUOTE_MISMATCH"})
+    @ParameterizedTest @ValueSource(strings = {"UNKNOWN_CITATION", "WEAK_CITATION", "MODEL_INSUFFICIENT_EVIDENCE", "QUOTE_MISMATCH"})
     void correctedResponseMustPassEveryGateAndCannotTriggerThirdCall(String failure) {
         var source = match(.7); var weak = match(.2); evidence(List.of(source, weak));
         var valid = new LlmResponse.Citation(source.chunkId(), "Move one space.");
         LlmResponse corrected = switch (failure) {
             case "UNKNOWN_CITATION" -> response(match(.7));
-            case "DUPLICATE_CITATION" -> new LlmResponse("answer", true, List.of(valid, valid));
             case "WEAK_CITATION" -> response(weak);
             case "MODEL_INSUFFICIENT_EVIDENCE" -> new LlmResponse("", false, List.of());
             default -> new LlmResponse("answer", true, List.of(new LlmResponse.Citation(source.chunkId(), "Still fabricated")));
@@ -244,11 +246,30 @@ class RuleAnswerServiceTest {
         assertFallback(answers.ask(game, question));
         assertReason("WEAK_CITATION");
     }
-    @Test void duplicateCitationFailsClosed() {
+    @Test void exactRepeatedCitationIsShownOnce() {
         var match = match(1); evidence(List.of(match)); var citation = new LlmResponse.Citation(match.chunkId(), "Move one space.");
         when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(citation, citation)));
+        var answer = answers.ask(game, question);
+        assertThat(answer.answer()).isEqualTo("answer");
+        assertThat(answer.sources()).singleElement().satisfies(s -> assertThat(s.quote()).isEqualTo("Move one space."));
+    }
+    @Test void differentQuotesFromOnePassageAreEachVerifiedAndKept() {
+        var match = match(1, "Deal one Defuse to each player. Everyone now has a hand of 8 cards total.");
+        evidence(List.of(match));
+        when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(
+                new LlmResponse.Citation(match.chunkId(), "Deal one Defuse to each player."),
+                new LlmResponse.Citation(match.chunkId(), "Everyone now has a hand of 8 cards total."))));
+        assertThat(answers.ask(game, question).sources()).extracting(RuleAnswer.Source::quote)
+                .containsExactly("Deal one Defuse to each player.", "Everyone now has a hand of 8 cards total.");
+    }
+    @Test void aSecondQuoteFromThePassageStillHasToMatch() {
+        var match = match(1, "Deal one Defuse to each player. Everyone now has a hand of 8 cards total.");
+        evidence(List.of(match));
+        when(llm.generate(any())).thenReturn(new LlmResponse("answer", true, List.of(
+                new LlmResponse.Citation(match.chunkId(), "Deal one Defuse to each player."),
+                new LlmResponse.Citation(match.chunkId(), "Everyone starts with two Defuses."))));
         assertFallback(answers.ask(game, question));
-        assertReason("DUPLICATE_CITATION");
+        assertReason("QUOTE_MISMATCH");
     }
     @Test void weakestCitedChunkDeterminesConfidence() {
         var strong = match(1); var medium = match(.6); evidence(List.of(strong, medium));

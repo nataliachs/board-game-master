@@ -41,6 +41,7 @@ public class RuleAnswerPromptBuilder {
             Copy each quote as one contiguous substring of that SAME excerpt's content, preserving spelling,
             numbers, punctuation, capitalization and whitespace. JSON escaping is allowed; paraphrasing quotes is not.
             Never attach a quote from one excerpt to another excerpt's chunkId, even if both discuss similar rules.
+            When one excerpt supports several details, you may cite it more than once with different quotes.
             Use conversation context to identify the active situation, such as initial setup versus later turns;
             cite only excerpts supporting that situation. You do not need to cite every retrieved excerpt.
             Do not invent source names, sections, pages or chunk IDs. Do not put unsupported source references
