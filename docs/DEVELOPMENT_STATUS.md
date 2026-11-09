@@ -36,6 +36,14 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Live retest after all answer fixes — 2026-11-09
+
+Deployed revision `board-game-master-00019-2js` (PR #20 on top of #17–#19, with `RAG_TOP_K=8`).
+The project owner retested Exploding Kittens, including the Defuse follow-up conversation, and
+reported the results as correct. This is a manual check on one game, not a benchmark; the
+intermittent `QUOTE_MISMATCH` seen once on "How many cards can I play on my turn?" was not
+diagnosed further, and Dixit has not yet been retested on this revision.
+
 ## The answer step now sees the resolved follow-up — 2026-11-09
 
 Retest on revision 00018 (PR #19 deployed): "Will it ever go back to the draw pile?" after a
