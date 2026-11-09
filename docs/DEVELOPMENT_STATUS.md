@@ -35,6 +35,43 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Scrollable conversation box — 2026-11-09
+
+Long sessions made the session page very long because every question and answer stacked below
+the Game Master panel. The conversation now sits in a fixed-height box (up to 62% of the screen
+height, at most 640 px) that scrolls by itself, is keyboard-focusable and is marked as a log for
+assistive technology. Presentation-only `conversation.js` opens it at the newest message; on an
+"Older messages" page it stays at the top, and the voice panel calls it again after refreshing
+the conversation. "Older messages" moved above the box, matching the chronological order.
+
+Validation: checked in the browser at 1024 px and 375 px with 24 messages against a throwaway
+database (20 shown, box opens at the newest answer, no horizontal scrolling, older page loads).
+`SessionIntegrationTest` now checks the box, the script and the older-messages page.
+`gradlew.bat check bootJar` passed: 395 unit and 109 integration tests. The spoken-question
+refresh path was not exercised in the browser because speech providers were off.
+
+## Friendly page when a browser page fails to render — 2026-11-09
+
+When a page template failed while rendering, Tomcat forwarded to `/error`, whose controller only
+returned JSON. The failed page had already marked the response as HTML, so Spring could not write
+the JSON either and the browser received an empty 500 page. `ApiErrorController` now renders the
+existing `error` template for requests that accept HTML, with fixed wording per status (servlet
+messages and exception text never reach the page), and sets `application/json` explicitly for
+everyone else.
+
+Validation: new `ApiErrorControllerTest` cases and a `SessionIntegrationTest` check of `/error`
+as a browser and as a JSON client. The original failure was reproduced against a throwaway
+database by temporarily reintroducing a template error: a browser received the friendly
+"Let's try again" page (500, `text/html`) and a JSON client the `INTERNAL_ERROR` body; the template
+was then restored. `gradlew.bat check bootJar` passed: 397 unit and 109 integration tests.
+
+Unknown addresses (for example `/no-such-page`) are answered by Spring MVC before `/error`.
+`BrowserNotFoundHandler` now gives requests that accept HTML the same friendly page with a 404
+message; `/api/` paths and clients that do not accept HTML (JSON, scripts, missing CSS or images)
+keep the JSON `NOT_FOUND` body. Tests: `BrowserNotFoundHandlerTest` and `SessionIntegrationTest`
+(a browser, a JSON client and an API path). `gradlew.bat check bootJar` passed: 399 unit and
+109 integration tests.
+
 ## Admin and rate-limit path bypass fix — 2026-11-09
 
 `AdminAccessFilter` and `PaidRequestLimitFilter` matched on the raw `getRequestURI()`, while

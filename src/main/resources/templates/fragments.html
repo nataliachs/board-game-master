@@ -15,6 +15,9 @@
 <section th:fragment="conversation" id="conversation" class="card conversation" aria-labelledby="conversation-title">
   <h2 id="conversation-title">Your conversation</h2>
   <p th:if="${#lists.isEmpty(page.history)}" class="muted">Questions and answers will appear here. Asking a question keeps your place.</p>
+  <a th:if="${page.olderCursor != null}" class="older-link" th:href="@{/sessions/{id}(id=${page.lesson.session.id},beforeSequence=${page.olderCursor})}">Older messages</a>
+  <div th:if="${!#lists.isEmpty(page.history)}" id="conversation-log" class="conversation-log" tabindex="0" role="log"
+       aria-label="Questions and answers, newest at the bottom">
   <article th:each="message : ${page.history}" class="message" th:classappend="${message.role.name() == 'USER' ? 'user-message' : 'assistant-message'}">
     <p class="eyebrow" th:text="${message.role.name() == 'USER' ? 'You' : 'Game Master'}"></p><p class="preserve" th:text="${message.content}"></p>
     <div th:if="${message.answer != null}" class="answer-details">
@@ -28,7 +31,7 @@
       </details><p th:if="${message.answer.confidence.name() == 'LOW'}" class="muted small">The available rules did not support a verified answer. Try a more specific question or check your printed rules.</p>
     </div>
   </article>
-  <a th:if="${page.olderCursor != null}" th:href="@{/sessions/{id}(id=${page.lesson.session.id},beforeSequence=${page.olderCursor})}">Older messages</a>
+  </div>
   <a th:if="${param.beforeSequence != null}" th:href="@{/sessions/{id}(id=${page.lesson.session.id})}">Latest messages</a>
 </section>
 </body></html>

@@ -25,6 +25,25 @@ class ApiErrorControllerTest {
     }
 
     @Test
+    void browsersGetTheFriendlyPageWithFixedWording() {
+        var request = new MockHttpServletRequest("GET", "/error");
+        request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, 500);
+        request.setAttribute(RequestDispatcher.ERROR_MESSAGE, "private diagnostic");
+        var page = controller.page(request);
+        assertThat(page.getViewName()).isEqualTo("error");
+        assertThat(page.getStatus().value()).isEqualTo(500);
+        assertThat(page.getModel().get("error")).asString().startsWith("Something went wrong").doesNotContain("private diagnostic");
+        request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, 404);
+        assertThat(controller.page(request).getModel().get("error")).asString().contains("doesn't exist");
+    }
+
+    @Test
+    void jsonErrorsDeclareTheirContentType() {
+        var response = controller.error(new MockHttpServletRequest("GET", "/error"));
+        assertThat(response.getHeaders().getContentType()).isEqualTo(org.springframework.http.MediaType.APPLICATION_JSON);
+    }
+
+    @Test
     void directErrorRequestUsesSafeFallback() {
         var response = controller.error(new MockHttpServletRequest("GET", "/error"));
         assertThat(response.getStatusCode().value()).isEqualTo(500);

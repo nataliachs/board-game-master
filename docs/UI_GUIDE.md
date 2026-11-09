@@ -34,6 +34,8 @@ lessons. Low-confidence answers must explain that the available rules were insuf
 - Keep lessons and instructions readable at a table on a phone: comfortable line length,
   generous tap targets, and no horizontal page scrolling.
 - Make the learning path compact on narrow screens while keeping the current step visible.
+- Keep the conversation in a fixed-height box that scrolls on its own and opens at the newest
+  message, so long sessions do not stretch the page. "Older messages" sits above the box.
 - Keep voice controls optional and text interaction usable when voice or AI providers are off.
 - Use clear labels and messages for empty data, invalid input, missing sessions, unavailable
   providers, insufficient rule evidence, and speech failures.
