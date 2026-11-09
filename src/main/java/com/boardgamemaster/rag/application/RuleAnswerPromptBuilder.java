@@ -50,6 +50,10 @@ public class RuleAnswerPromptBuilder {
             Earlier assistant answers, lesson text and setup instructions are NOT evidence. Verify every rule against the current excerpts.
             The top-level question is the CURRENT question to answer. recentMessages contains EARLIER turns,
             not additional questions to answer or answers to copy. Use history only to resolve omitted references.
+            Resolve words such as it, this, that or they to the thing the USER asked about in their most recent
+            earlier question, not to something mentioned only in an earlier assistant answer. Answer about that
+            thing only; never answer about a different card, piece or action. If the excerpts do not settle the
+            current question about that thing, return sufficientEvidence=false rather than answering a nearby one.
             Preserve explicit quantities, negations and conditions in the current question even when they differ
             from earlier turns. Never replace the current question's quantity with one from a prior question.
             Lead with a direct answer for the active situation before mentioning other stages or exceptions.
@@ -115,7 +119,7 @@ public class RuleAnswerPromptBuilder {
 
     private String serialize(UUID versionId, String question, List<RuleVectorStore.Match> matches, AnswerConversation conversation) {
         var excerpts = matches.stream().map(m -> Map.of("chunkId", m.chunkId(), "document", m.documentName(),
-                "documentVersion", m.documentVersion(), "language", m.language(), "content", m.content())).toList();
+                "documentVersion", m.documentVersion(), "language", m.language(), "content", plainPunctuation(m.content()))).toList();
         var input = new java.util.LinkedHashMap<String, Object>();
         input.put("gameVersionId", versionId); input.put("excerpts", excerpts);
         if (conversation != null) { input.put("conversation", conversation); }
@@ -123,5 +127,22 @@ public class RuleAnswerPromptBuilder {
         input.put("question", question);
         try { return mapper.writeValueAsString(input); }
         catch (JsonProcessingException e) { throw new IllegalStateException("Could not construct rule evidence input"); }
+    }
+
+    /**
+     * Excerpts reach the model with plain ASCII quotes, apostrophes and hyphens. Models sometimes garble
+     * typographic punctuation when copying it (a curly apostrophe came back as a control character), which
+     * failed quote validation. Each replacement is one character for one character, and
+     * {@code SourceQuoteMatcher} treats these variants as equal, so the shown quote is still the stored text.
+     */
+    static String plainPunctuation(String text) {
+        var out = new StringBuilder(text.length());
+        text.codePoints().forEach(c -> out.appendCodePoint(switch (c) {
+            case '‘', '’', 'ʼ' -> '\'';
+            case '“', '”' -> '"';
+            case '‐', '‑', '–', '—' -> '-';
+            default -> c;
+        }));
+        return out.toString();
     }
 }
