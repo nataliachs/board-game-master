@@ -13,7 +13,7 @@ is the default depth. Questions preserve the current lesson and setup step.
 Since then: Google Cloud deployment, a password-protected admin area, game import from a
 rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
 follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
-The latest full check (2026-11-09) passed **533 tests** (423 unit and 110 PostgreSQL/pgvector
+The latest full check (2026-11-09) passed **535 tests** (425 unit and 110 PostgreSQL/pgvector
 integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
@@ -35,6 +35,35 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Live diagnosis on Cloud Run — 2026-11-09
+
+With read access to the project's Cloud Run logs:
+
+- **Dixit, "What if nobody finds the storyteller's card?"**: the five retrieved passages were
+  Overview, Voting, Other players choose a card, A round of play and Giving a good clue; "Scoring a
+  round", which holds the complete rule, was not among them. The deployed service now uses
+  `RAG_TOP_K=8` (revision `board-game-master-00013-q8r`); the code default stays 5.
+- **Dixit follow-up**: the rewrite applied and "Scoring a round" was the top match (cosine 0.69),
+  but both quote attempts were rejected: the bold-text problem below.
+- **Exploding Kittens**: one rulebook document, imported after the column fix, with clean text.
+  An earlier `QUOTE_MISMATCH` on a page-1 passage did not recur: with quote diagnostics enabled
+  temporarily (`ANSWER_QUOTE_DIAGNOSTICS_LEVEL=DEBUG`, revision 00011, removed again in revision
+  00012), both retested questions were answered on the first attempt. The cause of the earlier
+  mismatch is unconfirmed; capitalisation of "YOU WIN" is a candidate.
+
+## Bold rule text could not be quoted — 2026-11-09
+
+Retest after the change below: the first answer was still storyteller-only, and the follow-up
+now fell back with `QUOTE_MISMATCH`. The logs showed the first answer used "Object of the game"
+(cosine 0.64), and the rewritten follow-up reached a different passage, which the model quoted
+but which failed validation. The Dixit rules summary writes the key scoring cases in Markdown
+bold (`**Everyone found the storyteller's card, or nobody did:**`); models quote that sentence
+without the asterisks, so the passage that holds the complete answer could never be cited.
+`SourceQuoteMatcher` now skips `*`/`_` emphasis runs (one to three characters) at the start or
+end of a word and still returns the original span; markers inside words, longer runs and every
+other character stay literal. Existing uploaded documents benefit without re-uploading.
+Validation: 425 unit and 110 integration tests passed. Not yet retested live.
 
 ## Incomplete answers and misread follow-ups in Dixit — 2026-11-09
 
