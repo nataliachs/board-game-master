@@ -36,6 +36,17 @@ class PdfRuleExtractorTest {
     }
 
     @Test
+    void twoColumnPagesKeepEachColumnsSentencesTogether() {
+        byte[] pdf = TestPdfs.twoColumns(
+                List.of("Left column: draw two cards", "and then play one.", PdfRuleExtractorTest.FILLER),
+                List.of("Right column: score three", "points for each set.", PdfRuleExtractorTest.FILLER));
+        String text = new String(extractor.extract("rules.pdf", pdf).markdown(), StandardCharsets.UTF_8);
+        assertThat(text).containsSubsequence("draw two cards", "and then play one.")
+                .containsSubsequence("score three", "points for each set.");
+        assertThat(text.indexOf("and then play one.")).isLessThan(text.indexOf("Right column"));
+    }
+
+    @Test
     void rejectsPdfsWithoutReadableText() {
         byte[] blank = TestPdfs.pdf(List.of(List.of(), List.of("Hi")));
         assertThatThrownBy(() -> extractor.extract("scan.pdf", blank)).isInstanceOf(RuleImportException.class)

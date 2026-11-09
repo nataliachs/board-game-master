@@ -13,6 +13,29 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 public final class TestPdfs {
     private TestPdfs() { }
 
+    /** One page with two side-by-side columns, written left column first, like most rulebook layouts. */
+    public static byte[] twoColumns(List<String> left, List<String> right) {
+        try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+            var page = new PDPage();
+            document.addPage(page);
+            try (var content = new PDPageContentStream(document, page)) {
+                for (var column : List.of(left, right)) {
+                    content.beginText();
+                    content.setFont(font, 9);
+                    content.setLeading(12);
+                    content.newLineAtOffset(column == left ? 40 : 320, 740);
+                    for (var line : column) { content.showText(line); content.newLine(); }
+                    content.endText();
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public static byte[] pdf(List<List<String>> pages) {
         try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
             var font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);

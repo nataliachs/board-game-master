@@ -59,6 +59,18 @@ public class RuleDocumentService {
                 .orElseThrow(() -> new RuleImportException(DOCUMENT_NOT_FOUND, "Document was not found for this game version"));
     }
 
+    /**
+     * Deletes a document and its passages. Vectors of those passages must be deleted first (they
+     * belong to the retrieval module); past answers keep their own copies of any quotes they showed.
+     */
+    @Transactional
+    public void deleteDocument(UUID versionId, UUID documentId) {
+        var document = getDocument(versionId, documentId);
+        chunks.deleteByDocumentIdAndGameVersionId(document.getId(), versionId);
+        documents.delete(document);
+        documents.flush();
+    }
+
     public Page<RuleDocument> listDocuments(UUID versionId, int page, int size) {
         getVersion(versionId);
         return documents.findByGameVersionId(versionId, paging(page, size, Sort.by("importedAt", "id")));

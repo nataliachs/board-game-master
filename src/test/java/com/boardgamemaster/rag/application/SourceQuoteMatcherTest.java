@@ -37,6 +37,21 @@ class SourceQuoteMatcherTest {
         assertThat(SourceQuoteMatcher.find("Pay (2)\n[cards]+.", "Pay (2) [cards]+.")).contains("Pay (2)\n[cards]+.");
         assertThat(SourceQuoteMatcher.find("Pay two cards.", "Pay .* cards.")).isEmpty();
     }
+    @Test void typographicPunctuationVariantsMatchAndReturnTheOriginalText() {
+        String original = "The storyteller’s card – the “secret” one – can’t be voted for.";
+        assertThat(SourceQuoteMatcher.find(original, "The storyteller's card - the \"secret\" one - can't be voted for."))
+                .contains(original);
+        assertThat(SourceQuoteMatcher.find("Don't draw.", "Don’t draw.")).contains("Don't draw.");
+        assertThat(SourceQuoteMatcher.find("A 2-player game.", "A 2–player game.")).contains("A 2-player game.");
+    }
+    @Test void punctuationVariantsDoNotLoosenAnythingElse() {
+        assertThat(SourceQuoteMatcher.find("Don’t draw.", "Dont draw.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Don’t draw.", "Don’’t draw.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Pay 2-3 cards.", "Pay 2 3 cards.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Pay 2-3 cards.", "Pay 2-4 cards.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("“Go”", "'Go'")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Pay a-b.", "Pay a]b.")).isEmpty();
+    }
     @Test void restoredQuotesRemainBounded() {
         assertThat(SourceQuoteMatcher.find("Keep" + " ".repeat(1000) + "two.", "Keep two.")).isEmpty();
         assertThat(SourceQuoteMatcher.find("x".repeat(1001), "x".repeat(1001))).isEmpty();

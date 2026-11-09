@@ -41,8 +41,10 @@ public class PdfRuleExtractor {
             if (pages > MAX_PAGES) {
                 throw new RuleImportException(INVALID_DOCUMENT, "The PDF has " + pages + " pages; the limit is " + MAX_PAGES);
             }
+            // Keep the PDF's own text order. Sorting by position reads straight across multi-column pages,
+            // splicing unrelated columns into one line, so quotes from a column no longer match the text.
             var stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
+            stripper.setSortByPosition(false);
             var text = new StringBuilder();
             int readable = 0;
             for (int page = 1; page <= pages; page++) {

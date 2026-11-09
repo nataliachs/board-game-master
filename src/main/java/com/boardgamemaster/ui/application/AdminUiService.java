@@ -223,6 +223,10 @@ public class AdminUiService {
                 storedName, text).getId();
     }
 
+    public RuleEmbeddingService.Removed removeRules(UUID gameId, UUID documentId) {
+        return embeddings.remove(requireVersion(gameId).getId(), documentId);
+    }
+
     public RuleEmbeddingService.IndexResult indexRules(UUID gameId, UUID documentId) {
         return embeddings.index(requireVersion(gameId).getId(), documentId);
     }

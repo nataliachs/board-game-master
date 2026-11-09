@@ -112,7 +112,35 @@ class GameImportIntegrationTest {
                     "plain text".getBytes(StandardCharsets.UTF_8));
             assertThat(notPdf.body()).contains("could not be read as a PDF");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM games WHERE slug IN ('other-game', 'third')", Integer.class)).isZero();
+
+            // Replace the rulebook: upload a second copy, give the first one a vector, then remove the first one.
+            assertThat(page.body()).contains("Remove source", "name=\"confirm\"");
+            UUID first = jdbc.queryForObject("SELECT id FROM rule_documents WHERE game_version_id = ?", UUID.class, version);
+            assertThat(postMultipart(browser, "/admin/games/" + gameId + "/rules", Map.of("name", "Clean copy", "sourceType", "RULEBOOK"),
+                    "moon-party.pdf", pdf).statusCode()).isEqualTo(302);
+            UUID chunk = jdbc.queryForObject("SELECT id FROM rule_chunks WHERE document_id = ? ORDER BY chunk_index LIMIT 1", UUID.class, first);
+            jdbc.update("INSERT INTO rule_chunk_embeddings (chunk_id, game_version_id, provider, model, dimensions, embedding) "
+                    + "VALUES (?, ?, 'fixture', 'fixture-model', 3, '[1,0,0]')", chunk, version);
+
+            assertThat(postForm(browser, "/admin/games/" + gameId + "/rules/" + first + "/remove", "").statusCode()).isEqualTo(302);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rule_documents WHERE id = ?", Integer.class, first))
+                    .as("removal needs the confirmation tick").isOne();
+
+            assertThat(postForm(browser, "/admin/games/" + gameId + "/rules/" + first + "/remove", "confirm=yes").statusCode()).isEqualTo(302);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rule_documents WHERE id = ?", Integer.class, first)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rule_chunks WHERE document_id = ?", Integer.class, first)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM rule_chunk_embeddings WHERE chunk_id = ?", Integer.class, chunk)).isZero();
+            assertThat(jdbc.queryForList("SELECT name FROM rule_documents WHERE game_version_id = ?", String.class, version))
+                    .containsExactly("Clean copy");
+            assertThat(postForm(browser, "/admin/games/" + gameId + "/rules/" + first + "/remove", "confirm=yes").statusCode())
+                    .as("removing twice is a friendly error, not a crash").isEqualTo(302);
         }
+    }
+
+    private HttpResponse<String> postForm(HttpClient browser, String path, String body) throws Exception {
+        return browser.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> get(HttpClient browser, String path) throws Exception {

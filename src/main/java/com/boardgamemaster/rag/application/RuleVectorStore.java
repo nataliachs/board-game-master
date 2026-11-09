@@ -17,6 +17,8 @@ public interface RuleVectorStore {
             double cosineSimilarity) { }
 
     Counts counts(UUID versionId, UUID documentId, EmbeddingProfile profile);
+    /** Deletes every stored vector of one document's passages, for any embedding profile; returns how many. */
+    int deleteDocument(UUID versionId, UUID documentId);
     List<ChunkText> pending(UUID versionId, UUID documentId, EmbeddingProfile profile);
     int store(UUID versionId, UUID documentId, EmbeddingProfile profile, List<VectorWrite> writes);
     boolean hasEmbeddings(UUID versionId, EmbeddingProfile profile);
