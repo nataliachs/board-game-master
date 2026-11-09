@@ -13,7 +13,7 @@ is the default depth. Questions preserve the current lesson and setup step.
 Since then: Google Cloud deployment, a password-protected admin area, game import from a
 rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
 follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
-The latest full check (2026-11-09) passed **535 tests** (425 unit and 110 PostgreSQL/pgvector
+The latest full check (2026-11-09) passed **536 tests** (426 unit and 110 PostgreSQL/pgvector
 integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
@@ -35,6 +35,18 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Two quotes from one passage were rejected — 2026-11-09
+
+Exploding Kittens, "How many Defuse cards do I start with?", fell back with `DUPLICATE_CITATION`
+although retrieval was strong (eight passages, best 0.79 on page 1). The model cited the same
+passage twice, most likely with two different quotes: the setup passage holds both "deal 1 to each
+player" and "7 cards + 1 Defuse". The original design rejected any second citation of a passage.
+Now different quotes from one passage are each validated and shown, and an exact repeat of the
+same passage and quote is shown once; unknown passages, weak evidence and mismatched quotes
+still fail. The prompt says a passage may be cited more than once with different quotes.
+`RuleAnswerServiceTest` covers the exact repeat, two valid quotes, and a second quote that
+doesn't match. Validation: 426 unit and 110 integration tests passed. Not yet retested live.
 
 ## Live diagnosis on Cloud Run — 2026-11-09
 

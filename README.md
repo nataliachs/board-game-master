@@ -151,7 +151,7 @@ your own copy, follow [DEPLOY_GCP.md](docs/DEPLOY_GCP.md).
 ## Tests
 
 ```powershell
-.\gradlew.bat test             # 425 unit tests, no Docker needed
+.\gradlew.bat test             # 426 unit tests, no Docker needed
 .\gradlew.bat integrationTest  # 110 integration tests on real PostgreSQL + pgvector (Docker)
 .\gradlew.bat check bootJar    # both suites, then the executable JAR
 ```
