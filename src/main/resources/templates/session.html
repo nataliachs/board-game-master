@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script><script src="/js/voice.js" defer></script></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script><script src="/js/voice.js" defer></script><script src="/js/conversation.js" defer></script></head>
 <body th:with="currentSession=${page.lesson.session},stage=${page.lesson.session.stage.name()}"><header th:replace="~{fragments :: header}"></header>
 <div class="stage-bar">
   <div>

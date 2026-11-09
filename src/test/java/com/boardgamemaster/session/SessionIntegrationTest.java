@@ -876,6 +876,20 @@ class SessionIntegrationTest {
             assertThat(html(browser,"/sessions/"+id).body()).contains("reload");assertThat(sessions.current(id).session().revision()).isEqualTo(1);
             var missing=html(browser,"/sessions/"+UUID.randomUUID());assertThat(missing.statusCode()).isEqualTo(404);assertThat(missing.body()).contains("Session was not found","Return to game selection").doesNotContain("stacktrace");
             assertThat(html(browser,"/sessions/not-a-uuid").statusCode()).isEqualTo(400);
+            // A page that fails while rendering is forwarded to /error: browsers get the friendly page, API clients JSON.
+            var errorPage=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/error")).header("Accept","text/html,*/*;q=0.8").GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(errorPage.statusCode()).isEqualTo(500);assertThat(errorPage.headers().firstValue("Content-Type").orElse("")).startsWith("text/html");
+            assertThat(errorPage.body()).contains("Let's try again","Something went wrong","Return to game selection").doesNotContain("\"code\"");
+            var errorJson=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/error")).header("Accept","application/json").GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(errorJson.statusCode()).isEqualTo(500);assertThat(errorJson.body()).contains("\"code\":\"INTERNAL_ERROR\"");
+            // A mistyped address: browsers get the friendly page; API paths and JSON clients keep JSON.
+            var unknownPage=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/no-such-page")).header("Accept","text/html,application/xhtml+xml,*/*;q=0.8").GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(unknownPage.statusCode()).isEqualTo(404);assertThat(unknownPage.headers().firstValue("Content-Type").orElse("")).startsWith("text/html");
+            assertThat(unknownPage.body()).contains("Let's try again","exist. Check the address","Return to game selection").doesNotContain("\"code\"");
+            var unknownJson=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/no-such-page")).header("Accept","application/json").GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(unknownJson.statusCode()).isEqualTo(404);assertThat(unknownJson.body()).contains("\"code\":\"NOT_FOUND\"");
+            var unknownApi=browser.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/api/v1/no-such-thing")).header("Accept","text/html,*/*;q=0.8").GET().build(),HttpResponse.BodyHandlers.ofString());
+            assertThat(unknownApi.statusCode()).isEqualTo(404);assertThat(unknownApi.body()).contains("\"code\":\"NOT_FOUND\"");
         }
     }
     @Test void browserEscapesUntrustedLessonsAndSourcesAndServesPolicyAndStaticAssets() throws Exception {
@@ -897,6 +911,12 @@ class SessionIntegrationTest {
         try(var browser=HttpClient.newHttpClient()) {
             var fragment=html(browser,"/sessions/"+id+"/conversation");assertThat(fragment.statusCode()).isEqualTo(200);
             assertThat(fragment.body()).contains("id=\"conversation\"","View sources","Move one space to collect a resource.");
+            assertThat(fragment.body()).contains("id=\"conversation-log\"","role=\"log\"");
+            var sessionPage=html(browser,"/sessions/"+id);assertThat(sessionPage.statusCode()).isEqualTo(200);
+            assertThat(sessionPage.body()).contains("id=\"conversation-log\"","/js/conversation.js");
+            var olderPage=html(browser,"/sessions/"+id+"?beforeSequence=2");assertThat(olderPage.statusCode()).isEqualTo(200);
+            assertThat(olderPage.body()).contains("id=\"conversation-log\"","Latest messages");
+            assertThat(html(browser,"/js/conversation.js").body()).contains("conversation-log","beforeSequence");
             assertThat(html(browser,"/sessions/"+id+"/review").body()).contains("An original teaching explanation.");
         }
         assertThat(sessions.current(id).session().gameVersionId()).isEqualTo(f.version());assertThat(sessions.current(id).session().revision()).isEqualTo(1);

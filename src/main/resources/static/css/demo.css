@@ -248,6 +248,13 @@ footer { max-width: 1360px; margin: 2rem auto 0; padding: 1.5rem 2rem 2.5rem; co
 /* Conversation */
 .conversation { padding: 1.4rem; }
 .conversation h2 { font-size: 1.25rem; margin-bottom: .9rem; }
+/* Long conversations scroll inside the card instead of stretching the page. */
+.conversation-log { max-height: min(62vh, 640px); overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 -.5rem; padding: .25rem .5rem; border-radius: 12px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.conversation-log:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.conversation-log .message:last-child { margin-bottom: 0; }
+.older-link { display: inline-block; margin-bottom: .75rem; }
+.conversation-log + a { display: inline-block; margin-top: .75rem; }
 .message { margin: 0 0 .9rem; padding: .85rem 1rem; border-radius: 18px; overflow-wrap: anywhere; }
 .message .eyebrow { margin-bottom: .3rem; font-size: .68rem; }
 .message p:last-child { margin-bottom: 0; }

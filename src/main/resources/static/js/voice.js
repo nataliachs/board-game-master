@@ -50,7 +50,7 @@
         if (history.ok) {
           const parsed = new DOMParser().parseFromString(await history.text(), "text/html");
           const conversation = parsed.getElementById("conversation");
-          if (conversation) document.getElementById("conversation").replaceWith(conversation);
+          if (conversation) { document.getElementById("conversation").replaceWith(conversation); window.bgmShowLatestMessage?.(); }
         }
       } catch (_) { document.getElementById("voice-audio-notice").textContent += " Refresh the session to see saved history."; }
     } catch (_) { showError("Could not reach the server. Refresh the session before retrying; a question may already have been saved."); }
