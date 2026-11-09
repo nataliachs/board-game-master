@@ -13,7 +13,7 @@ is the default depth. Questions preserve the current lesson and setup step.
 Since then: Google Cloud deployment, a password-protected admin area, game import from a
 rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
 follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
-The latest full check (2026-11-09) passed **536 tests** (426 unit and 110 PostgreSQL/pgvector
+The latest full check (2026-11-09) passed **538 tests** (428 unit and 110 PostgreSQL/pgvector
 integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
@@ -35,6 +35,32 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Garbled apostrophes in quotes; follow-ups about the wrong card — 2026-11-09
+
+Exploding Kittens kept falling back with `QUOTE_MISMATCH` on different page-1 and page-2 passages.
+With quote diagnostics enabled briefly (revision 00016, removed in 00017), "How many cards can I
+play on my turn?" was asked five times as a player in one test session: all five answered
+correctly, and one first attempt was rejected and then corrected. Its rejected quote was exact
+except that the rulebook's curly apostrophe in "you’d" came back as a control character followed
+by "9d". The model garbles typographic punctuation when copying it.
+`RuleAnswerPromptBuilder` now sends excerpts with plain ASCII quotes, apostrophes and hyphens
+(one character for one, so offsets are unchanged); `SourceQuoteMatcher` already treats them as
+equal and returns the stored text, so citations still show the original rulebook wording.
+
+In the same conversation, "will it ever go back to the draw pile?" after a question about the
+played Defuse was answered "Yes" about the Exploding Kitten from the previous answer. The prompt
+now says that pronouns refer to what the user asked about in their previous question, not to
+something mentioned only in an assistant answer, and to decline rather than answer about a
+different card or action.
+
+Side finding: in `prod`, the stateless question API (`POST /api/v1/games/{id}/questions`)
+requires the admin password, because `AdminAccessFilter` protects every POST under
+`/api/v1/games/`. Player sessions are unaffected; this keeps anonymous paid calls off that API.
+Diagnosis left one test session in the production database.
+
+`AnswerCompletenessConfigTest` covers the plain-punctuation excerpts and the follow-up rule.
+Validation: 428 unit and 110 integration tests passed. Not yet retested live.
 
 ## Two quotes from one passage were rejected — 2026-11-09
 
