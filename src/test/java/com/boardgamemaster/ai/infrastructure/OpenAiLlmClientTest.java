@@ -332,6 +332,72 @@ class OpenAiLlmClientTest {
                     e -> assertThat(e.code()).isEqualTo(LlmException.Code.LLM_NOT_CONFIGURED));
         });
     }
+    private Map<String, Object> draftJson(Object lessons) {
+        var draft = new LinkedHashMap<String, Object>();
+        draft.put("name", "Moon Party"); draft.put("publisher", ""); draft.put("category", "Party");
+        draft.put("minPlayers", 3); draft.put("maxPlayers", 8); draft.put("playTimeMinutes", 30);
+        draft.put("edition", "Base game"); draft.put("language", "en"); draft.put("description", "A fixture.");
+        draft.put("setupSteps", List.of(Map.of("title", "Place the board", "instruction", "Middle of the table.",
+                "notes", List.of(), "warnings", List.of("Keep cards hidden."))));
+        draft.put("lessons", lessons);
+        return draft;
+    }
+    private Map<String, Object> draftLesson() {
+        var lesson = new LinkedHashMap<String, Object>();
+        lesson.put("title", "Your goal"); lesson.put("explanation", "Score the most points.");
+        lesson.put("quick", true); lesson.put("standard", true); lesson.put("detailed", true); lesson.put("startsSetup", false);
+        lesson.put("examples", List.of()); lesson.put("tips", List.of("Have fun.")); lesson.put("references", List.of("Page 1"));
+        return lesson;
+    }
+
+    @Test void gameDraftUsesItsOwnBudgetAndStrictSchemaAndParsesTheDraft() throws Exception {
+        var client = new OpenAiLlmClient(config(Duration.ofSeconds(3)), new GameDraftProperties(12000, Duration.ofSeconds(5)), mapper,
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).followRedirects(HttpClient.Redirect.NEVER).build(),
+                URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/responses"));
+        response = envelope(mapper.writeValueAsString(draftJson(List.of(draftLesson()))));
+        var draft = client.draftGame(input);
+        assertThat(draft.name()).isEqualTo("Moon Party");
+        assertThat(draft.maxPlayers()).isEqualTo(8);
+        assertThat(draft.language()).isEqualTo("en");
+        assertThat(draft.setupSteps()).singleElement().satisfies(s -> assertThat(s.warnings()).containsExactly("Keep cards hidden."));
+        assertThat(draft.lessons()).singleElement().satisfies(l -> {
+            assertThat(l.quick()).isTrue();
+            assertThat(l.references()).containsExactly("Page 1");
+        });
+        var sent = mapper.readTree(request);
+        assertThat(sent.path("max_output_tokens").asInt()).isEqualTo(12000);
+        assertThat(sent.path("store").asBoolean()).isFalse();
+        var format = sent.path("text").path("format");
+        assertThat(format.path("name").asText()).isEqualTo("game_teaching_draft");
+        assertThat(format.path("strict").asBoolean()).isTrue();
+        assertThat(format.path("schema").path("required")).hasSize(11);
+        assertThat(format.path("schema").path("properties").path("lessons").path("items").path("additionalProperties").asBoolean()).isFalse();
+    }
+
+    @Test void malformedOrRefusedGameDraftsAreRejected() throws Exception {
+        var client = client(Duration.ofSeconds(3));
+        var extraLessonField = new LinkedHashMap<>(draftLesson()); extraLessonField.put("extra", 1);
+        for (var body : List.of("{}", mapper.writeValueAsString(draftJson("not a list")),
+                mapper.writeValueAsString(draftJson(List.of(extraLessonField))))) {
+            response = envelope(body);
+            assertThatThrownBy(() -> client.draftGame(input)).isInstanceOf(LlmException.class);
+        }
+        response = mapper.writeValueAsString(Map.of("status", "completed", "output", List.of(Map.of("type", "message", "role", "assistant",
+                "status", "completed", "content", List.of(Map.of("type", "refusal", "refusal", "No."))))));
+        assertThatThrownBy(() -> client.draftGame(input)).isInstanceOf(LlmException.class).hasMessageContaining("declined");
+        response = mapper.writeValueAsString(Map.of("status", "incomplete", "output", List.of()));
+        assertThatThrownBy(() -> client.draftGame(input)).isInstanceOf(LlmException.class);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"boardgame.game-draft.max-output-tokens=999", "boardgame.game-draft.max-output-tokens=32001",
+            "boardgame.game-draft.timeout=281s", "boardgame.game-draft.timeout=0s"})
+    void invalidGameDraftConfigurationFailsStartup(String setting) { context().withPropertyValues(setting).run(c -> assertThat(c).hasFailed()); }
+
+    @Test void disabledProviderGivesAClearGameDraftError() {
+        context().run(app -> assertThatThrownBy(() -> app.getBean(GameDraftClient.class).draftGame(input))
+                .isInstanceOf(LlmException.class).hasMessageContaining("import a game from a rulebook"));
+    }
+
     @ParameterizedTest @ValueSource(strings = {"boardgame.llm.provider=unknown", "boardgame.llm.timeout=0s", "boardgame.llm.timeout=121s",
             "boardgame.llm.max-output-tokens=0", "boardgame.llm.max-output-tokens=4097", "boardgame.llm.provider=openai",
             "boardgame.llm.reasoning-effort=invalid", "boardgame.llm.reasoning-effort=low"})

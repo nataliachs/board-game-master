@@ -35,6 +35,40 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Import a game from a rulebook PDF — 2026-11-09
+
+`/admin → Add a game` has an **Import from a rulebook PDF** card. `GameImportService` extracts the
+PDF's text page by page (`PdfRuleExtractor`, Apache PDFBox 3.0.4, with `<!-- page: N -->` markers),
+asks the LLM for one structured draft (`GameDraftClient`, strict JSON schema `game_teaching_draft`
+on the OpenAI adapter), fits it to the app's rules (styles nest Quick ⊂ Standard ⊂ Detailed, one
+setup-starting lesson shown in all styles, lengths and player counts bounded), and saves it in one
+transaction through the existing `AdminUiService` checks: a **hidden** game with its default
+version, setup steps, lessons and the rulebook as a rule document. Indexing runs afterwards; if it
+fails, the import still succeeds and says so. Nothing is saved if extraction or drafting fails.
+
+Design decisions (agreed with the project owner):
+
+- **Review before players see it.** Drafted content is application-managed data reviewed by the
+  admin, consistent with the spec's rule that teaching structure is stored data and "the LLM must
+  not invent rules". The game stays hidden until the admin ticks *Show this game to players*.
+- **The rulebook text itself is indexed for questions**, not an AI summary, so answers quote real
+  rules and citations show page numbers. It stays in the private database, never in Git; the form
+  requires confirming the PDF is the admin's own copy for private use.
+
+The draft call has its own limits (`GAME_DRAFT_MAX_OUTPUT_TOKENS`, default 16000;
+`GAME_DRAFT_TIMEOUT`, default 180s) because a whole game is far longer than a rule answer. The
+prompt treats the rulebook as data, asks for original beginner-friendly wording, base game only,
+and the rulebook's language. The regular rules upload in section 4 now accepts PDFs too.
+
+Validation: `gradlew.bat check bootJar` passed: 418 unit and 110 integration tests. New tests:
+`PdfRuleExtractorTest`, `GameImportServiceTest`, OpenAI draft request/response and configuration
+cases in `OpenAiLlmClientTest`, and `GameImportIntegrationTest`, which uploads a generated PDF
+through the admin page with a stubbed draft client and checks the hidden game, steps, lessons,
+paged chunks and error cases. Extraction was also checked on a real 4-page rulebook PDF (10
+passages, one or more on every page). **Not yet verified:** a live draft from the real model, so
+draft quality, length and timing on real rulebooks are unknown. Scanned PDFs are rejected rather
+than read with OCR.
+
 ## Scrollable conversation box — 2026-11-09
 
 Long sessions made the session page very long because every question and answer stacked below

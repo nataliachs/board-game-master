@@ -23,6 +23,8 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
+    // Reads text from rulebook PDFs uploaded in the admin area (text only; scanned images are rejected).
+    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
     runtimeOnly 'org.postgresql:postgresql'
     // Connects to Cloud SQL from Cloud Run (used only when DB_URL names a cloudSqlInstance).
     runtimeOnly 'com.google.cloud.sql:postgres-socket-factory:1.30.2'

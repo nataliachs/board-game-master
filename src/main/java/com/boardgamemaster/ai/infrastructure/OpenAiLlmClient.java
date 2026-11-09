@@ -10,14 +10,29 @@ import java.util.*;
 import static com.boardgamemaster.ai.LlmException.Code.*;
 
 /** Responses API adapter. Production endpoint is fixed; local injection is for contract tests. */
-public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceReviewClient {
+public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceReviewClient, GameDraftClient {
     private final LlmProperties config;
+    private final GameDraftProperties draftConfig;
     private final ObjectMapper mapper;
     private final HttpClient http;
     private final URI endpoint;
 
     OpenAiLlmClient(LlmProperties config, ObjectMapper mapper, HttpClient http, URI endpoint) {
-        this.config = config; this.mapper = mapper; this.http = http; this.endpoint = endpoint;
+        this(config, GameDraftProperties.defaults(), mapper, http, endpoint);
+    }
+    OpenAiLlmClient(LlmProperties config, GameDraftProperties draftConfig, ObjectMapper mapper, HttpClient http, URI endpoint) {
+        this.config = config; this.draftConfig = draftConfig; this.mapper = mapper; this.http = http; this.endpoint = endpoint;
+    }
+
+    @Override public GameDraft draftGame(LlmRequest input) {
+        try {
+            String text = outputText(send(input, "game_teaching_draft", GameDraftSchema.schema(),
+                    draftConfig.maxOutputTokens(), draftConfig.timeout()), 250000);
+            if (text == null) {
+                throw new LlmException(LLM_INVALID_RESPONSE, "The AI declined to draft this game from the rulebook");
+            }
+            return GameDraftSchema.parse(mapper.readTree(text));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw invalid(); }
     }
 
     @Override public LlmResponse generate(LlmRequest input) {
@@ -79,9 +94,14 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
     }
 
     private JsonNode send(LlmRequest input, String schemaName, Map<String, Object> outputSchema) {
+        return send(input, schemaName, outputSchema, config.maxOutputTokens(), config.timeout());
+    }
+
+    private JsonNode send(LlmRequest input, String schemaName, Map<String, Object> outputSchema, int maxOutputTokens,
+            java.time.Duration timeout) {
         try {
             var parameters = new LinkedHashMap<String, Object>(Map.of("model", config.model(), "instructions", input.instructions(),
-                    "input", input.input(), "store", false, "max_output_tokens", config.maxOutputTokens(),
+                    "input", input.input(), "store", false, "max_output_tokens", maxOutputTokens,
                     "text", Map.of("format", Map.of("type", "json_schema", "name", schemaName,
                             "strict", true, "schema", outputSchema))));
             if (config.usesLuna()) {
@@ -90,7 +110,7 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
                 parameters.put("temperature", 0);
             }
             String body = mapper.writeValueAsString(parameters);
-            var request = HttpRequest.newBuilder(endpoint).timeout(config.timeout())
+            var request = HttpRequest.newBuilder(endpoint).timeout(timeout)
                     .header("Authorization", "Bearer " + config.apiKey()).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build();
             var response = http.send(request, HttpResponse.BodyHandlers.ofString());
@@ -108,6 +128,10 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
     }
 
     private String outputText(JsonNode response) {
+        return outputText(response, 100000);
+    }
+
+    private String outputText(JsonNode response, int maxLength) {
         if (response == null || !response.path("status").asText().equals("completed")
                 || !response.path("output").isArray()) { throw invalid(); }
         String text = null;
@@ -130,7 +154,7 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
             }
         }
         if (refused) { return null; }
-        if (text == null || text.length() > 100000) { throw invalid(); }
+        if (text == null || text.length() > maxLength) { throw invalid(); }
         return text;
     }
 

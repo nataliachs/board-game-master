@@ -89,7 +89,7 @@
   <!-- 4. Rules for questions -->
   <section class="card admin-section" id="rules" aria-labelledby="rules-title" th:if="${page.version != null}">
     <h2 id="rules-title">4. Rules for questions <span class="optional">optional</span></h2>
-    <p class="muted">Upload rules you have permission to use as a .txt or .md file, then index them so the Game Master can answer questions with citations. Indexing needs an embedding provider and may cost money.</p>
+    <p class="muted">Upload rules you have permission to use as a .pdf, .txt or .md file, then index them so the Game Master can answer questions with citations. Indexing needs an embedding provider and may cost money.</p>
     <table class="admin-table" th:if="${!#lists.isEmpty(page.sources)}">
       <thead><tr><th scope="col">Source</th><th scope="col">Type</th><th scope="col">Passages</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
       <tbody><tr th:each="source : ${page.sources}"><td><strong th:text="${source.name}"></strong><br><span class="muted small" th:text="${source.fileName}"></span></td><td th:text="${source.type}"></td><td th:text="${source.chunks}"></td>
@@ -97,7 +97,7 @@
     </table>
     <form class="admin-form" th:action="@{/admin/games/{id}/rules(id=${game.id})}" method="post" enctype="multipart/form-data">
       <div class="field-grid">
-        <div class="field wide-field"><label for="rules-file">Rules file (.txt or .md, UTF-8)</label><input id="rules-file" name="file" type="file" accept=".txt,.md,text/plain,text/markdown" required></div>
+        <div class="field wide-field"><label for="rules-file">Rules file (.pdf, .txt or .md)</label><input id="rules-file" name="file" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" required></div>
         <div class="field"><label for="rules-name">Name <span class="optional">optional</span></label><input id="rules-name" name="name" maxlength="200" placeholder="Rulebook"></div>
         <div class="field"><label for="rules-type">Type</label><select id="rules-type" name="sourceType"><option value="RULEBOOK">Rulebook</option><option value="FAQ">FAQ</option><option value="ERRATA">Errata</option><option value="EXPANSION">Expansion</option></select></div>
         <div class="field wide-field"><label for="rules-reference">Where it came from <span class="optional">optional</span></label><input id="rules-reference" name="sourceReference" maxlength="500" placeholder="e.g. My own summary, or the publisher's rules page"></div>

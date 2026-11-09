@@ -11,8 +11,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(LlmProperties.class)
+@EnableConfigurationProperties({LlmProperties.class, GameDraftProperties.class})
 public class LlmConfiguration {
+    @Bean @Primary @ConditionalOnMissingBean(GameDraftClient.class)
+    GameDraftClient gameDraftClient(LlmClient client) {
+        if (client instanceof GameDraftClient drafts) { return drafts::draftGame; }
+        return request -> { throw new LlmException(LlmException.Code.LLM_NOT_CONFIGURED,
+                "Enable and configure an LLM provider to import a game from a rulebook"); };
+    }
     // The OpenAI LlmClient also implements these ports at runtime. Prefer each explicit port wrapper.
     @Bean @Primary @ConditionalOnMissingBean(EvidenceReviewClient.class)
     EvidenceReviewClient evidenceReviewClient(LlmClient client) {
@@ -39,12 +45,12 @@ public class LlmConfiguration {
     }
     @Bean
     @ConditionalOnMissingBean(LlmClient.class)
-    LlmClient llmClient(LlmProperties config, ObjectMapper mapper) {
+    LlmClient llmClient(LlmProperties config, GameDraftProperties drafts, ObjectMapper mapper) {
         if (config.provider().equals("disabled")) {
             return request -> { throw new LlmException(LlmException.Code.LLM_NOT_CONFIGURED,
                     "Enable and configure an LLM provider to generate rule answers"); };
         }
-        return new OpenAiLlmClient(config, mapper,
+        return new OpenAiLlmClient(config, drafts, mapper,
                 HttpClient.newBuilder().connectTimeout(config.timeout()).followRedirects(HttpClient.Redirect.NEVER).build(),
                 URI.create("https://api.openai.com/v1/responses"));
     }
