@@ -52,6 +52,23 @@ class SourceQuoteMatcherTest {
         assertThat(SourceQuoteMatcher.find("“Go”", "'Go'")).isEmpty();
         assertThat(SourceQuoteMatcher.find("Pay a-b.", "Pay a]b.")).isEmpty();
     }
+    @Test void markdownEmphasisAroundWordsIsSkippedAndTheOriginalSpanReturned() {
+        String source = "- **Everyone found the storyteller's card, or nobody did:** the storyteller scores 0 points and\n"
+                + "  every other player scores 2 points.";
+        assertThat(SourceQuoteMatcher.find(source,
+                "Everyone found the storyteller's card, or nobody did: the storyteller scores 0 points and every other player scores 2 points."))
+                .contains("**Everyone found the storyteller's card, or nobody did:** the storyteller scores 0 points and\n"
+                        + "  every other player scores 2 points.");
+        assertThat(SourceQuoteMatcher.find("Draw _one_ card.", "Draw one card.")).contains("Draw _one_ card.");
+        assertThat(SourceQuoteMatcher.find("A __bold__ move.", "A bold move.")).contains("A __bold__ move.");
+    }
+    @Test void emphasisSkippingDoesNotLoosenWordsOrNumbers() {
+        assertThat(SourceQuoteMatcher.find("Pay 2*3 coins.", "Pay 23 coins.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Keep**two.", "Keep two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("**Score 3** points.", "Score 4 points.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("snake_case name", "snakecase name")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Draw ****one card.", "Draw one card.")).isEmpty();
+    }
     @Test void restoredQuotesRemainBounded() {
         assertThat(SourceQuoteMatcher.find("Keep" + " ".repeat(1000) + "two.", "Keep two.")).isEmpty();
         assertThat(SourceQuoteMatcher.find("x".repeat(1001), "x".repeat(1001))).isEmpty();

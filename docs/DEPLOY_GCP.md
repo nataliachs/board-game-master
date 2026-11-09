@@ -154,6 +154,16 @@ gcloud run services update board-game-master --region $REGION `
   --update-env-vars EMBEDDING_PROVIDER=disabled,LLM_PROVIDER=disabled,STT_PROVIDER=disabled,TTS_PROVIDER=disabled
 ```
 
+**Retrieved passages per answer.** The deployed app uses `RAG_TOP_K=8` (default `5`): answers see up to
+eight rule passages, so a rule stated in a less obvious section (such as a scoring case) still
+reaches the model. Each answer reads a little more text; the answer budget
+(`ANSWER_MAX_CONTEXT_CHARACTERS`, 24000) drops any passages that don't fit. Set it under **Edit &
+deploy new revision → Variables & Secrets**, or:
+
+```powershell
+gcloud run services update board-game-master --region $REGION --update-env-vars RAG_TOP_K=8
+```
+
 **Importing a game from a rulebook PDF** (`/admin`, password-protected, not counted in the caps
 above) makes one larger AI call per import, using the same model and key. Two optional settings
 control it:

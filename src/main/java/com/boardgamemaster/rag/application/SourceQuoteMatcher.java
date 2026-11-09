@@ -4,9 +4,10 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Allows only whitespace-run differences and typographic variants of the same punctuation (straight
- * versus curly quotes and apostrophes, hyphen versus en or em dash), which rulebooks and models write
- * differently. Returns a contiguous span of the original source, so the shown quote is always verbatim.
+ * Allows only whitespace-run differences, typographic variants of the same punctuation (straight
+ * versus curly quotes and apostrophes, hyphen versus en or em dash) and Markdown emphasis markers
+ * around words, which rulebooks and models write differently. Returns a contiguous span of the
+ * original source, so the shown quote is always verbatim.
  */
 final class SourceQuoteMatcher {
     private static final Pattern SPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
@@ -14,6 +15,7 @@ final class SourceQuoteMatcher {
     private static final String APOSTROPHES = "'‘’ʼ";
     private static final String DOUBLE_QUOTES = "\"“”";
     private static final String DASHES = "-‐‑–—";
+    private static final String EMPHASIS = "(?:[*_]{1,3})?";
 
     private SourceQuoteMatcher() { }
 
@@ -23,9 +25,10 @@ final class SourceQuoteMatcher {
         if (normalized.isEmpty()) { return Optional.empty(); }
         if (content.contains(quote)) { return Optional.of(quote); }
         // Every other non-whitespace character is literal. A whitespace run must remain a whitespace run:
-        // this cannot merge words, remove punctuation, expand ellipses or change numbers.
+        // this cannot merge words, remove punctuation, expand ellipses or change numbers. Markdown emphasis
+        // markers (*, **, _, __) may wrap a source word, because models quote bold rule text without them.
         String expression = String.join("(?U:\\s+)", java.util.Arrays.stream(normalized.split(" "))
-                .map(SourceQuoteMatcher::literal).toList());
+                .map(word -> EMPHASIS + literal(word) + EMPHASIS).toList());
         var matched = Pattern.compile(expression).matcher(content);
         while (matched.find()) {
             if (matched.end() - matched.start() <= MAX_QUOTE_CHARACTERS) {

@@ -52,8 +52,8 @@ new content can't change the rules halfway through a game.
 **Answers have to prove where they came from.** Questions run through a version-scoped RAG
 pipeline: query embedding, pgvector cosine search filtered to that game's ruleset,
 deduplication and reranking, then a grounded answer under a strict JSON schema. Every quote the
-model cites is matched back to the stored rulebook text, allowing only whitespace and
-typographic-punctuation differences. If evidence is missing, weak or misquoted, the user gets an
+model cites is matched back to the stored rulebook text, allowing only whitespace,
+typographic-punctuation and Markdown-emphasis differences. If evidence is missing, weak or misquoted, the user gets an
 explicit low-confidence fallback. Each fallback reason is logged, which is how a real bug
 (two-column PDFs being read straight across the page) was traced and fixed.
 
@@ -151,7 +151,7 @@ your own copy, follow [DEPLOY_GCP.md](docs/DEPLOY_GCP.md).
 ## Tests
 
 ```powershell
-.\gradlew.bat test             # 423 unit tests, no Docker needed
+.\gradlew.bat test             # 425 unit tests, no Docker needed
 .\gradlew.bat integrationTest  # 110 integration tests on real PostgreSQL + pgvector (Docker)
 .\gradlew.bat check bootJar    # both suites, then the executable JAR
 ```
