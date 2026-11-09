@@ -43,6 +43,11 @@ public class GameService {
         return createGame(slug, name, publisher, minPlayers, maxPlayers, estimatedDurationMinutes, description, active, null, null);
     }
 
+    @Transactional(readOnly = true)
+    public boolean slugExists(String slug) {
+        return games.existsBySlug(slug);
+    }
+
     @Transactional
     public Game createGame(String slug, String name, String publisher, int minPlayers, int maxPlayers,
             int estimatedDurationMinutes, String description, boolean active, String category, String coverImageUrl) {

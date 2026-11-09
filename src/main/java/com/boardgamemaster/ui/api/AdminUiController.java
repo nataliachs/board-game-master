@@ -4,6 +4,7 @@ import com.boardgamemaster.common.exception.PresentationFailure;
 import com.boardgamemaster.rules.domain.RuleImportException;
 import com.boardgamemaster.ui.application.AdminUiService;
 import com.boardgamemaster.ui.application.AdminUiService.*;
+import com.boardgamemaster.ui.application.GameImportService;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Supplier;
@@ -15,14 +16,15 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
- * Local admin pages for adding games, lessons, setup steps and rule sources. Like the rest of the
- * demo UI there is no authentication: run it only on your own machine.
+ * Admin pages for adding games, lessons, setup steps and rule sources, including drafting a whole
+ * game from a rulebook PDF. {@code AdminAccessFilter} protects them with a password when one is set.
  */
 @Controller
 @RequestMapping("/admin")
 public class AdminUiController {
     private final AdminUiService admin;
-    public AdminUiController(AdminUiService admin) { this.admin = admin; }
+    private final GameImportService imports;
+    public AdminUiController(AdminUiService admin, GameImportService imports) { this.admin = admin; this.imports = imports; }
 
     @GetMapping
     public String games(Model model) {
@@ -49,6 +51,29 @@ public class AdminUiController {
         } catch (RuntimeException e) {
             model.addAttribute("error", message(e));
             model.addAttribute("form", form);
+            return "admin-new";
+        }
+    }
+
+    @PostMapping("/games/import")
+    public String importRulebook(@RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(defaultValue = "") String name, @RequestParam(defaultValue = "") String ownCopy,
+            Model model, RedirectAttributes flash) throws IOException {
+        try {
+            if (file == null || file.isEmpty()) { throw new AdminFormException("Choose the rulebook PDF to import."); }
+            if (ownCopy.isBlank()) { throw new AdminFormException("Confirm that this is your own copy of the rulebook, for private use."); }
+            var result = imports.importRulebook(Objects.requireNonNullElse(file.getOriginalFilename(), "rulebook.pdf"), file.getBytes(), name);
+            String rules = result.indexed()
+                    ? result.indexedPassages() + " rulebook passages are indexed for questions."
+                    : result.indexProblem() + ": use Index for questions in section 4.";
+            flash.addFlashAttribute("notice", result.name() + " was drafted from " + result.pages() + " PDF pages: "
+                    + result.setupSteps() + " setup steps and " + result.lessons() + " lessons. " + rules
+                    + " The game is hidden from players: check every section, then tick Show this game to players and save.");
+            return "redirect:/admin/games/" + result.gameId();
+        } catch (RuntimeException e) {
+            model.addAttribute("importError", message(e));
+            model.addAttribute("importName", name);
+            model.addAttribute("form", new NewGame("", "", "", 2, 4, 30, "", "", "", "Base game", "en"));
             return "admin-new";
         }
     }

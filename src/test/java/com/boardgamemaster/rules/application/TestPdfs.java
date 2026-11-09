@@ -1,0 +1,37 @@
+package com.boardgamemaster.rules.application;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.List;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+
+/** Builds small text PDFs for tests: one inner list of lines per page. */
+public final class TestPdfs {
+    private TestPdfs() { }
+
+    public static byte[] pdf(List<List<String>> pages) {
+        try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+            for (var lines : pages) {
+                var page = new PDPage();
+                document.addPage(page);
+                try (var content = new PDPageContentStream(document, page)) {
+                    content.beginText();
+                    content.setFont(font, 11);
+                    content.setLeading(14);
+                    content.newLineAtOffset(50, 740);
+                    for (var line : lines) { content.showText(line); content.newLine(); }
+                    content.endText();
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}

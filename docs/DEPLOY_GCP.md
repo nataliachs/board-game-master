@@ -154,6 +154,18 @@ gcloud run services update board-game-master --region $REGION `
   --update-env-vars EMBEDDING_PROVIDER=disabled,LLM_PROVIDER=disabled,STT_PROVIDER=disabled,TTS_PROVIDER=disabled
 ```
 
+**Importing a game from a rulebook PDF** (`/admin`, password-protected, not counted in the caps
+above) makes one larger AI call per import, using the same model and key. Two optional settings
+control it:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `GAME_DRAFT_MAX_OUTPUT_TOKENS` | `16000` | Longest draft the AI may write (1000–32000) |
+| `GAME_DRAFT_TIMEOUT` | `180s` | How long to wait for the draft (at most 280s) |
+
+Cloud Run's default request timeout of 300 seconds covers an import. If you lowered it, raise it
+again under **Edit & deploy new revision → Containers → Settings → Request timeout**.
+
 ## 7. Updating the app
 
 After code changes (and passing tests), deploy again. Settings and secrets from the first deploy

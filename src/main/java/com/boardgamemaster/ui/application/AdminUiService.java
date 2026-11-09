@@ -5,6 +5,7 @@ import com.boardgamemaster.game.api.GameResponses.VersionResponse;
 import com.boardgamemaster.game.application.GameService;
 import com.boardgamemaster.game.domain.GameVersion;
 import com.boardgamemaster.rag.application.RuleEmbeddingService;
+import com.boardgamemaster.rules.application.PdfRuleExtractor;
 import com.boardgamemaster.rules.application.RuleDocumentService;
 import com.boardgamemaster.rules.domain.DocumentMetadata;
 import com.boardgamemaster.rules.domain.RuleSourceType;
@@ -58,10 +59,12 @@ public class AdminUiService {
     private final SetupService setups;
     private final RuleDocumentService documents;
     private final RuleEmbeddingService embeddings;
+    private final PdfRuleExtractor pdfs;
 
     public AdminUiService(GameService games, TeachingService teaching, SetupService setups,
-            RuleDocumentService documents, RuleEmbeddingService embeddings) {
-        this.games = games; this.teaching = teaching; this.setups = setups; this.documents = documents; this.embeddings = embeddings;
+            RuleDocumentService documents, RuleEmbeddingService embeddings, PdfRuleExtractor pdfs) {
+        this.games = games; this.teaching = teaching; this.setups = setups; this.documents = documents;
+        this.embeddings = embeddings; this.pdfs = pdfs;
     }
 
     @Transactional(readOnly = true)
@@ -78,9 +81,21 @@ public class AdminUiService {
 
     @Transactional
     public UUID createGame(NewGame form) {
+        return createGame(form, true);
+    }
+
+    /** True when a game with this name's web-address name (slug) already exists. */
+    @Transactional(readOnly = true)
+    public boolean nameTaken(String name) {
+        return games.slugExists(slugify(name));
+    }
+
+    /** {@code visible=false} creates the game hidden from players, for example while an imported draft is reviewed. */
+    @Transactional
+    public UUID createGame(NewGame form, boolean visible) {
         String slug = blank(form.slug()) ? slugify(form.name()) : form.slug().strip();
         var game = games.createGame(slug, form.name(), form.publisher(), form.minPlayers(), form.maxPlayers(), form.duration(),
-                form.description(), true, form.category(), form.coverImageUrl());
+                form.description(), visible, form.category(), form.coverImageUrl());
         String edition = blank(form.edition()) ? "Base game" : form.edition();
         String language = blank(form.language()) ? "en" : form.language().strip().toLowerCase(Locale.ROOT);
         games.createVersion(game.getId(), edition, "base-game", language, null, true, true);
@@ -188,15 +203,24 @@ public class AdminUiService {
         return teaching.publish(version.getId(), games.getGame(gameId).getName() + " lessons", sections);
     }
 
+    /** Stores a .txt, .md or .pdf rules source; a PDF keeps its page numbers for citations. Returns the document id. */
     @Transactional
-    public void uploadRules(UUID gameId, String name, String type, String sourceReference, String fileName, byte[] bytes) {
+    public UUID uploadRules(UUID gameId, String name, String type, String sourceReference, String fileName, byte[] bytes) {
         var version = requireVersion(gameId);
-        if (bytes == null || bytes.length == 0) { throw new AdminFormException("Choose a .txt or .md rules file to upload."); }
+        if (bytes == null || bytes.length == 0) { throw new AdminFormException("Choose a .pdf, .txt or .md rules file to upload."); }
         RuleSourceType sourceType;
         try { sourceType = RuleSourceType.valueOf(type); }
         catch (RuntimeException e) { throw new AdminFormException("Choose a source type."); }
-        documents.ingest(version.getId(), new DocumentMetadata(blank(name) ? fileName : name, sourceType, "1",
-                version.getLanguage(), blank(sourceReference) ? "Uploaded through the admin page" : sourceReference), fileName, bytes);
+        String storedName = fileName;
+        byte[] text = bytes;
+        if (PdfRuleExtractor.isPdf(fileName)) {
+            var extracted = pdfs.extract(fileName, bytes);
+            storedName = extracted.fileName();
+            text = extracted.markdown();
+        }
+        return documents.ingest(version.getId(), new DocumentMetadata(blank(name) ? fileName : name, sourceType, "1",
+                version.getLanguage(), blank(sourceReference) ? "Uploaded through the admin page" : sourceReference),
+                storedName, text).getId();
     }
 
     public RuleEmbeddingService.IndexResult indexRules(UUID gameId, UUID documentId) {

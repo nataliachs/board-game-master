@@ -3,7 +3,28 @@
 <body><header th:replace="~{fragments :: header}"></header>
 <main class="admin-layout narrow">
   <a href="/admin">← Back to the game library</a>
-  <p class="eyebrow">Admin · Step 1 of 3</p><h1>Add a game</h1>
+  <p class="eyebrow">Admin</p><h1>Add a game</h1>
+
+  <section class="card admin-form import-card" aria-labelledby="import-title">
+    <h2 id="import-title">Import from a rulebook PDF</h2>
+    <p>Upload the rulebook and the Game Master drafts everything: game details, setup steps and lessons in
+      Quick, Standard and Detailed styles. The rulebook is indexed for rule questions, with page numbers.</p>
+    <p th:if="${importError}" class="alert error" role="alert" th:text="${importError}"></p>
+    <form action="/admin/games/import" method="post" enctype="multipart/form-data">
+      <div class="field-grid">
+        <div class="field wide-field"><label for="import-file">Rulebook PDF</label><input id="import-file" name="file" type="file" accept=".pdf,application/pdf" required>
+          <p class="hint">A PDF with selectable text, up to 10 MB. Scanned pictures of pages can't be read.</p></div>
+        <div class="field wide-field"><label for="import-name">Game name <span class="optional">optional</span></label><input id="import-name" name="name" maxlength="200" th:value="${importName}" placeholder="Taken from the rulebook if left empty">
+          <p class="hint">It also sets the web address name, which can't be changed later.</p></div>
+      </div>
+      <label class="checkbox-label"><input type="checkbox" name="ownCopy" value="yes" required>This is my own copy of the rulebook, used privately for my games.</label>
+      <p class="hint">The game is created <strong>hidden</strong> so you can check the draft before players see it. AI can make
+        mistakes, so compare it with the rulebook. Importing calls your AI provider and can take up to three minutes; keep this page open.</p>
+      <div class="actions"><button class="primary" type="submit">Import rulebook</button></div>
+    </form>
+  </section>
+
+  <h2 class="or-heading">Or enter it yourself</h2>
   <p class="lead">Start with the basics. After saving you will add setup steps and lessons on the next page.</p>
   <p th:if="${error}" class="alert error" role="alert" th:text="${error}"></p>
   <form class="card admin-form" action="/admin/games" method="post">

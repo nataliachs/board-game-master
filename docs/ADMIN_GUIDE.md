@@ -3,8 +3,36 @@
 The admin area lets you add games without writing SQL or calling the API. Open it at
 [localhost:8080/admin](http://localhost:8080/admin), or choose **Admin** in the page header.
 
-> The admin area has no sign-in, like the rest of the demo. Run the app only on your own
-> computer, and don't expose it to the internet.
+> When `ADMIN_PASSWORD` is set (always on Google Cloud, see [DEPLOY_GCP.md](DEPLOY_GCP.md)), the
+> browser asks for the admin username and password. Without it, the admin area is open, so run it
+> that way only on your own computer.
+
+## Fastest: import a game from a rulebook PDF
+
+On **Admin → Add a game**, the first card is **Import from a rulebook PDF**:
+
+1. Choose the rulebook PDF. It must have selectable text (scanned pictures of pages can't be
+   read), up to 10 MB and 300 pages.
+2. Optional: type the **Game name**. If you leave it empty, the name is taken from the rulebook.
+   The name also sets the web address name, which can't be changed later.
+3. Tick that this is your own copy of the rulebook, used privately, and choose **Import rulebook**.
+   Keep the page open: it calls your AI provider and can take up to three minutes.
+
+The app then:
+
+- reads the PDF page by page;
+- asks the AI to draft the game details, setup steps and lessons in its own words, with Quick,
+  Standard and Detailed styles that differ, and one "Prepare the table" lesson that starts setup;
+- saves the draft through the same checks as hand-entered content;
+- stores the rulebook text and indexes it for rule questions, so citations show page numbers.
+
+The game is created **hidden**. Review every section against the rulebook (AI can make mistakes),
+fix anything with the normal editor, then tick **Show this game to players** and save.
+
+This needs an LLM provider (`LLM_PROVIDER=openai`) and, for indexing, an embedding provider. If
+indexing isn't available, the game and rulebook are still saved and you can choose **Index for
+questions** later. Nothing is saved if reading the PDF or drafting fails. Store only rulebooks you
+own, for private use; the rulebook stays in your database, never in Git.
 
 ## Before you start
 
@@ -60,8 +88,9 @@ Once the game is active and has lessons, it shows on the home page with the stat
 
 The Game Master can answer rule questions with citations once rules are uploaded and indexed.
 
-1. Prepare the rules as a UTF-8 `.txt` or `.md` file. Only use rules you have permission to use,
-   and keep commercial rulebooks out of Git (for example in the ignored `local-rules/` folder).
+1. Prepare the rules as a PDF with selectable text, or a UTF-8 `.txt` or `.md` file. A PDF keeps
+   its page numbers for citations. Only use rules you have permission to use, and keep commercial
+   rulebooks out of Git (for example in the ignored `local-rules/` folder).
 2. In **4. Rules for questions**, choose the file, a type (Rulebook, FAQ, Errata or Expansion) and
    **Upload rules**.
 3. Choose **Index for questions**. This needs an embedding provider in your private `.env`
