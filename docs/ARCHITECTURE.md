@@ -247,7 +247,8 @@ install the extension ahead of time. Production credentials come from environmen
 The local profile imports optional `.env` as Java properties. Use simple `NAME=value` lines
 without shell `export`, quotes, or Compose-only interpolation. Run from the repository root.
 The production profile does not import `.env` and disables Swagger/OpenAPI by default.
-This bootstrap has no authentication and is intended for local development.
+Admin pages and content-changing APIs are protected by `AdminAccessFilter` when `ADMIN_PASSWORD`
+is set, which the `prod` profile requires; see [Admin area, PDF import and deployment](#admin-area-pdf-import-and-deployment).
 
 Tests split fast MVC/error checks (`test`) from real PostgreSQL/pgvector startup and HTTP
 checks (`integrationTest`). `check` requires both, so unavailable Docker cannot yield a
@@ -370,8 +371,8 @@ V6 includes original concise reference Catan teaching data (seven QUICK, nine ST
 DETAILED sections). It is an introductory overview, not a complete rulebook or verified physical
 setup guide. Reading pointers are authored metadata, not evidence citations; the seed does not
 import/index rule documents. Generic session/teaching code contains no game-specific branches.
-Provider-free teaching and opt-in paid Q&A are documented separately in README. Local APIs have
-no authentication, and production authorization/history retention policies remain future work.
+Provider-free teaching and opt-in paid Q&A are documented separately in README. Player-facing
+session APIs are intentionally open; per-user accounts and history retention policies remain future work.
 
 Milestone 6 tests cover domain transitions/depth/navigation, bounded structured context, real
 HTTP session/flow/history operations, default/flow pinning, grounded follow-ups, cross-session
@@ -458,7 +459,7 @@ microphone on user action, stops tracks on release/cancellation, bounds recordin
 transcription, errors and audio. Updated revisions and history come from the backend. Navigation,
 rules, retrieval and provider calls remain server-side. The pages use same-origin resources, a
 content security policy, no-store headers, cookie-only session tracking and a cross-site form-write
-guard. These are local-demo protections, not production authentication or authorization.
+guard. Admin authentication and AI request caps are added by the filters described below.
 
 Tests exercise multipart provider contracts using local HTTP fixtures, orchestration failures and
 race handling, HTML flows/history/citations/escaping and disabled-provider teaching. A headless
@@ -479,3 +480,33 @@ question replies and review returns are suppressed; explicit Repeat/Explain agai
 The playback script fetches later segments only as earlier ones finish, supports pause/stop/replay,
 reuses current-page audio, aborts pending fetches on navigation and coordinates with question audio
 and microphone capture. All spoken content selection and segmentation remain in backend services.
+
+## Admin area, PDF import and deployment
+
+**Admin area.** `AdminUiController` and `AdminUiService` are a form-friendly adapter over the
+catalog, teaching, setup and rule services: they translate form rows into the same publish calls
+the APIs use, so validation, append-only publishing and version pinning stay in those services.
+Rules sources can be removed (`RuleEmbeddingService.remove` deletes vectors, passages and the
+document in one transaction); games can only be hidden.
+
+**PDF import.** `GameImportService` runs in three stages. `PdfRuleExtractor` (Apache PDFBox)
+extracts text in the PDF's own reading order, so multi-column pages stay intact, and inserts a
+`<!-- page: N -->` marker per page for citations. `GameDraftClient` makes one structured-output
+call (strict JSON schema `game_teaching_draft`, its own token budget and timeout) for catalog
+details, setup steps and lessons; the prompt treats the rulebook as data. The draft is then fitted
+to the app's rules and saved in one transaction as a hidden game, together with the rulebook as a
+rule document; indexing runs afterwards and may be retried. Nothing is saved if extraction or
+drafting fails. Quote validation (`SourceQuoteMatcher`) accepts whitespace and typographic
+punctuation differences only and always returns the original source span.
+
+**Security filters.** `AdminAccessFilter` puts HTTP Basic auth on `/admin` and content-changing
+catalog and rule APIs, and refuses them in `prod` when no password is configured.
+`PaidRequestLimitFilter` caps question, voice and narration requests per client per hour and per
+application per day, in memory. Both match on the path Spring MVC routes on (decoded, without
+`;parameters`), not the raw request URI. `ApiErrorController` and `BrowserNotFoundHandler` give
+browsers the friendly HTML error page and API clients JSON.
+
+**Deployment.** A two-stage `Dockerfile` (Temurin 21, non-root) runs on Cloud Run with Cloud SQL
+for PostgreSQL and Secret Manager; Cloud Build redeploys on every merge to `main`. The Cloud SQL
+JDBC socket factory is used only when `DB_URL` names a `cloudSqlInstance`. See
+[DEPLOY_GCP.md](DEPLOY_GCP.md).

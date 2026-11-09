@@ -8,12 +8,13 @@ is the default depth. Questions preserve the current lesson and setup step.
 
 ## Current milestone
 
-**Milestone 8 — Voice + Minimal Demo UI: implemented.**
+**Milestone 8 — Voice + Minimal Demo UI: implemented.** All nine milestones are done.
 
-All nine milestones are implemented. Current follow-up work focuses on answer relevance,
-contextual questions and citation quality. The latest full check (2026-11-07) passed **502 tests**
-(393 unit and 109 PostgreSQL/pgvector integration tests) with mock providers. After the
-2026-11-09 filter fix, all 504 pass (395 unit, 109 integration).
+Since then: Google Cloud deployment, a password-protected admin area, game import from a
+rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
+follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
+The latest full check (2026-11-09) passed **533 tests** (423 unit and 110 PostgreSQL/pgvector
+integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
 The latest precise-citation retest passed for the reported exchange. Relevance/support review
@@ -34,6 +35,23 @@ still unverified. The dated notes below retain both successful tests and earlier
 
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
+
+## Incomplete answers and misread follow-ups in Dixit — 2026-11-09
+
+Live test on the deployed app. "What if nobody finds the storyteller's card?" was answered with the
+storyteller's score only, leaving out that every other player scores 2. The follow-up "how about
+other player?" was answered about choosing cards: the search ran on the follow-up alone.
+
+- The answer prompt asked for concise answers but never for complete outcomes. It now tells the
+  model to give every outcome the cited excerpts state for each affected player or role, and
+  that concise means short, not incomplete.
+- Contextual follow-up rewriting already existed (`ContextualQueryRewriter`) but was off by default.
+  The `prod` profile now turns it on (`RAG_QUERY_REWRITE_ENABLED`, default `true` there, still
+  `false` locally); it adds one small LLM call per short follow-up and can be switched off.
+
+`AnswerCompletenessConfigTest` pins both. `gradlew.bat check bootJar` passed: 423 unit and 110
+integration tests. Not yet retested against the live model; both questions should be asked again
+after deployment.
 
 ## PDF answers rejected as QUOTE_MISMATCH — 2026-11-09
 

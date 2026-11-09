@@ -4,6 +4,10 @@ This document defines the product requirements and architecture. It describes th
 behavior; [development status](docs/DEVELOPMENT_STATUS.md) records what is implemented and
 what has actually been tested.
 
+> Since migration V9, the reference game is Ticket to Ride (2025 Edition). Catan examples in
+> this specification are from the original requirements and describe the intended behaviour,
+> not the current seed data.
+
 ## 1. Product goal and customer journey
 
 ### Core product experience

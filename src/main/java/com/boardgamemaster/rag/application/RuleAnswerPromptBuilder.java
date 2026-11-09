@@ -52,6 +52,9 @@ public class RuleAnswerPromptBuilder {
             Preserve explicit quantities, negations and conditions in the current question even when they differ
             from earlier turns. Never replace the current question's quantity with one from a prior question.
             Lead with a direct answer for the active situation before mentioning other stages or exceptions.
+            When the question asks what happens in a situation, give every outcome the cited excerpts state
+            for that situation, for each player or role it affects (for example the active player and all
+            other players), not only the first outcome found. Concise means short, not incomplete.
             If the proposed action violates a supported minimum or maximum, clearly say it is not allowed
             and explain the supported limit; do not open with Yes and then describe a different permitted action.
             Before returning, check that the answer addresses the current question and that its opening
