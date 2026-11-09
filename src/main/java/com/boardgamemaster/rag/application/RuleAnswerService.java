@@ -70,11 +70,11 @@ public class RuleAnswerService {
                     ? retrieval.search(versionId, question.strip(), null)
                     : retrieval.search(versionId, question.strip(), topK, threshold, filters);
             var prompt = conversation == null ? prompts.build(versionId, question.strip(), retrieved.matches())
-                    : prompts.build(versionId, question.strip(), retrieved.matches(), conversation);
+                    : prompts.build(versionId, question.strip(), retrieved.matches(), conversation, retrieved.resolvedQuestion());
             if (reviewed && !prompt.evidence().isEmpty()) {
                 var selected = review.select(prompt);
                 if (selected.isEmpty()) { return fallback(gameId, versionId, FallbackReason.NO_RELEVANT_EVIDENCE, null); }
-                prompt = prompts.build(versionId, question.strip(), selected, conversation);
+                prompt = prompts.build(versionId, question.strip(), selected, conversation, retrieved.resolvedQuestion());
             }
             for (var match : retrieved.matches()) {
                 LOG.info("Rule answer evidence: gameId={}, gameVersionId={}, chunkId={}, documentId={}, section={}, page={}, cosineSimilarity={}, includedInPrompt={}, minimumEvidenceSimilarity={}",

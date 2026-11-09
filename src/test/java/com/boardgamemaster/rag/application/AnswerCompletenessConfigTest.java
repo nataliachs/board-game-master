@@ -44,6 +44,23 @@ class AnswerCompletenessConfigTest {
     }
 
     @Test
+    void theResolvedFollowUpReachesTheAnswerPromptOnlyWhenThereIsOne() {
+        var builder = new RuleAnswerPromptBuilder(new ObjectMapper(), new AnswerProperties(.5, .8, 24000));
+        var context = new AnswerConversation(UUID.randomUUID(), "Fixture game", "Edition", "en", 4, "STANDARD", "PLAYING",
+                "Playing", "", List.of(new AnswerConversation.Turn("USER", "Where does a played Defuse card go?")));
+        UUID version = UUID.randomUUID();
+        var resolved = builder.build(version, "Will it ever go back to the draw pile?", List.of(), context,
+                "Will a played Defuse card ever go back into the Draw Pile?").request();
+        assertThat(resolved.input()).contains("\"resolvedQuestion\":\"Will a played Defuse card ever go back into the Draw Pile?\"");
+        assertThat(resolved.input().indexOf("resolvedQuestion")).isLessThan(resolved.input().lastIndexOf("\"question\""));
+        assertThat(resolved.instructions()).contains("If resolvedQuestion is present, it restates the CURRENT question");
+        assertThat(builder.build(version, "Will it ever go back?", List.of(), context, null).request().input())
+                .doesNotContain("resolvedQuestion");
+        assertThat(builder.build(version, "Will it ever go back?", List.of(), context, "  ").request().input())
+                .doesNotContain("resolvedQuestion");
+    }
+
+    @Test
     void productionRewritesShortFollowUpsByDefaultButCanBeTurnedOff() {
         var yaml = new YamlPropertiesFactoryBean();
         yaml.setResources(new ClassPathResource("application-prod.yaml"));

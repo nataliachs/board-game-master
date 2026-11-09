@@ -118,7 +118,7 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 
 Health should contain `"status":"UP"`. Swagger documents catalog, rules, retrieval, questions,
 sessions, teaching and guided setup operations. The latest full local `check bootJar` run passed
-**538 tests** (428 unit and 110 integration) with mock providers and built the executable JAR.
+**539 tests** (429 unit and 110 integration) with mock providers and built the executable JAR.
 This is local validation, separate from GitHub Actions or live-model evaluation; see
 development status for the dated evidence and remaining limitations.
 

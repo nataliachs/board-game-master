@@ -32,10 +32,11 @@ class RuleRetrievalServiceTest {
         when(rewriteClient.rewrite(any())).thenReturn(java.util.Optional.of(standalone));
         when(client.embed(standalone)).thenReturn(vector);
         when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of());
-        service.searchContextual(version, "What's the risk?", context);
+        var result = service.searchContextual(version, "What's the risk?", context);
         verify(rewriteClient, times(1)).rewrite(any());
         verify(client, times(1)).embed(standalone);
         verify(store, times(1)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
+        assertThat(result.resolvedQuestion()).as("the answer step must see what the follow-up means").isEqualTo(standalone);
     }
 
     @Test void rewriteFailureRetainsDeterministicQueryAndStatelessSearchSkipsRewrite() {
@@ -51,7 +52,7 @@ class RuleRetrievalServiceTest {
         when(client.embed(anyString())).thenReturn(vector);
         when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of());
         when(rewriteClient.rewrite(any())).thenThrow(new LlmException(LlmException.Code.LLM_TIMEOUT, "safe error"));
-        service.searchContextual(version, "What's the risk?", context);
+        assertThat(service.searchContextual(version, "What's the risk?", context).resolvedQuestion()).isNull();
         verify(client).embed(context.retrievalQuery("What's the risk?", 100));
         service.search(version, "standalone", null);
         verify(rewriteClient, times(1)).rewrite(any());

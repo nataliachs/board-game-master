@@ -39,10 +39,15 @@ public class RuleRetrievalService {
     }
     public record Diagnostics(RetrievalFilters filters, double similarityThreshold, int candidateLimit, int candidates,
             int belowThreshold, int duplicatesRemoved, int returned, boolean candidateLimitReached, long elapsedMs) { }
-    public record SearchResult(UUID gameVersionId, EmbeddingProfile profile, int topK, List<RuleVectorStore.Match> matches, Diagnostics diagnostics) {
+    /** {@code resolvedQuestion} is the standalone restatement of a session follow-up, when one was made; never evidence. */
+    public record SearchResult(UUID gameVersionId, EmbeddingProfile profile, int topK, List<RuleVectorStore.Match> matches,
+            Diagnostics diagnostics, String resolvedQuestion) {
         public SearchResult { matches = List.copyOf(matches); }
+        public SearchResult(UUID versionId, EmbeddingProfile profile, int topK, List<RuleVectorStore.Match> matches, Diagnostics diagnostics) {
+            this(versionId, profile, topK, matches, diagnostics, null);
+        }
         public SearchResult(UUID versionId, EmbeddingProfile profile, int topK, List<RuleVectorStore.Match> matches) {
-            this(versionId, profile, topK, matches, null);
+            this(versionId, profile, topK, matches, null, null);
         }
     }
     public SearchResult search(UUID versionId, String query, Integer topK) { return search(versionId, query, topK, null, null); }
@@ -94,8 +99,10 @@ public class RuleRetrievalService {
         if (!store.hasEmbeddings(versionId, profile, filters)) {
             return result(versionId, profile, limit, filters, minimum, List.of(), 0, 0, 0, started);
         }
+        String resolved = null;
         if (conversation != null && queryRewriter != null) {
-            query = queryRewriter.rewrite(originalQuestion, conversation, Math.min(4000, embeddings.maxInputCharacters())).orElse(query);
+            resolved = queryRewriter.rewrite(originalQuestion, conversation, Math.min(4000, embeddings.maxInputCharacters())).orElse(null);
+            if (resolved != null) { query = resolved; }
         }
         var vector = embeddings.embed(query.strip());
         var candidates = store.search(versionId, profile, vector, config.candidateLimit(), filters);
@@ -110,8 +117,9 @@ public class RuleRetrievalService {
         } catch (RuntimeException e) {
             throw new RetrievalException(RetrievalException.Code.RERANKING_FAILED, "Rule reranking failed or returned invalid candidates");
         }
-        return result(versionId, profile, limit, filters, minimum, ranked.stream().limit(limit).toList(),
+        var found = result(versionId, profile, limit, filters, minimum, ranked.stream().limit(limit).toList(),
                 candidates.size(), candidates.size() - eligible.size(), eligible.size() - unique.size(), started);
+        return new SearchResult(found.gameVersionId(), found.profile(), found.topK(), found.matches(), found.diagnostics(), resolved);
     }
     private SearchResult result(UUID version, EmbeddingProfile profile, int topK, RetrievalFilters filters, double threshold,
             List<RuleVectorStore.Match> matches, int count, int below, int duplicateCount, long started) {

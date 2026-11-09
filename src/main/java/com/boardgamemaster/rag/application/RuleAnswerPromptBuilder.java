@@ -54,6 +54,8 @@ public class RuleAnswerPromptBuilder {
             earlier question, not to something mentioned only in an earlier assistant answer. Answer about that
             thing only; never answer about a different card, piece or action. If the excerpts do not settle the
             current question about that thing, return sufficientEvidence=false rather than answering a nearby one.
+            If resolvedQuestion is present, it restates the CURRENT question with its references resolved; answer
+            the current question with that meaning. It is a restatement only: not rule evidence, not a new question.
             Preserve explicit quantities, negations and conditions in the current question even when they differ
             from earlier turns. Never replace the current question's quantity with one from a prior question.
             Lead with a direct answer for the active situation before mentioning other stages or exceptions.
@@ -88,10 +90,17 @@ public class RuleAnswerPromptBuilder {
     }
 
     public Prompt build(UUID versionId, String question, List<RuleVectorStore.Match> matches, AnswerConversation conversation) {
+        return build(versionId, question, matches, conversation, null);
+    }
+
+    /** {@code resolvedQuestion}: the follow-up restated with its references resolved, or null. It is context, never evidence. */
+    public Prompt build(UUID versionId, String question, List<RuleVectorStore.Match> matches, AnswerConversation conversation,
+            String resolvedQuestion) {
+        String resolved = resolvedQuestion == null || resolvedQuestion.isBlank() ? null : resolvedQuestion.strip();
         var selected = new ArrayList<RuleVectorStore.Match>();
         // Context is subordinate to the question and evidence budget. Drop oldest whole turns first.
         var firstEvidence = matches.isEmpty() ? List.<RuleVectorStore.Match>of() : List.of(matches.getFirst());
-        while (conversation != null && serialize(versionId, question, firstEvidence, conversation).length() > config.maxContextCharacters()) {
+        while (conversation != null && serialize(versionId, question, firstEvidence, conversation, resolved).length() > config.maxContextCharacters()) {
             if (!conversation.recentMessages().isEmpty()) {
                 conversation = new AnswerConversation(conversation.sessionId(), conversation.game(), conversation.edition(), conversation.language(),
                         conversation.playerCount(), conversation.teachingDepth(), conversation.stage(), conversation.lessonTitle(),
@@ -109,20 +118,22 @@ public class RuleAnswerPromptBuilder {
         for (var match : matches) {
             if (!versionId.equals(match.gameVersionId())) { throw new IllegalStateException("Retrieved evidence has the wrong game version"); }
             selected.add(match);
-            if (serialize(versionId, question, selected, conversation).length() > config.maxContextCharacters()) {
+            if (serialize(versionId, question, selected, conversation, resolved).length() > config.maxContextCharacters()) {
                 selected.removeLast();
                 break;
             }
         }
-        return new Prompt(new LlmRequest(INSTRUCTIONS, serialize(versionId, question, selected, conversation)), List.copyOf(selected));
+        return new Prompt(new LlmRequest(INSTRUCTIONS, serialize(versionId, question, selected, conversation, resolved)), List.copyOf(selected));
     }
 
-    private String serialize(UUID versionId, String question, List<RuleVectorStore.Match> matches, AnswerConversation conversation) {
+    private String serialize(UUID versionId, String question, List<RuleVectorStore.Match> matches, AnswerConversation conversation,
+            String resolved) {
         var excerpts = matches.stream().map(m -> Map.of("chunkId", m.chunkId(), "document", m.documentName(),
                 "documentVersion", m.documentVersion(), "language", m.language(), "content", plainPunctuation(m.content()))).toList();
         var input = new java.util.LinkedHashMap<String, Object>();
         input.put("gameVersionId", versionId); input.put("excerpts", excerpts);
         if (conversation != null) { input.put("conversation", conversation); }
+        if (resolved != null) { input.put("resolvedQuestion", resolved); }
         // Keep the current question after history so an earlier exchange is not the final user cue.
         input.put("question", question);
         try { return mapper.writeValueAsString(input); }
