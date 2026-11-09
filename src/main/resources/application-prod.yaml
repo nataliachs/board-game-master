@@ -12,6 +12,10 @@ boardgame:
     required: true
     username: ${ADMIN_USERNAME:admin}
     password: ${ADMIN_PASSWORD:}
+  query-rewrite:
+    # Turns short follow-ups ("how about the other players?") into standalone searches using the
+    # previous question. Adds one small LLM call per short follow-up; RAG_QUERY_REWRITE_ENABLED=false turns it off.
+    enabled: ${RAG_QUERY_REWRITE_ENABLED:true}
   paid-requests:
     # Caps on requests that can call paid AI providers; 0 turns a cap off.
     per-client-per-hour: ${PAID_REQUESTS_PER_CLIENT_PER_HOUR:20}

@@ -115,7 +115,10 @@ The Game Master can answer rule questions with citations once rules are uploaded
 2. In **1. Game details**, set **Cover image** to `/images/covers/my-game.jpg` and save.
 3. Restart the app so it picks up the new file.
 
-An `https://` image address also works. Games without a cover show their initials.
+An `https://` image address also works, for example a public Google Cloud Storage object
+(`https://storage.googleapis.com/<bucket>/<file>.jpg`); it needs no rebuild or restart. Games
+without a cover show their initials. Use only images you have the right to publish, such as
+your own photos; publisher box art is copyrighted, so keep it out of Git.
 
 ## Keeping a game permanently
 
