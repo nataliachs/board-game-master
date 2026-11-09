@@ -18,6 +18,13 @@ public class PgVectorRuleStore implements RuleVectorStore {
     private final JdbcTemplate jdbc;
     public PgVectorRuleStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
+    @Override public int deleteDocument(UUID versionId, UUID documentId) {
+        return jdbc.update("""
+                DELETE FROM rule_chunk_embeddings e USING rule_chunks c
+                WHERE e.chunk_id = c.id AND e.game_version_id = c.game_version_id
+                  AND c.document_id = ? AND c.game_version_id = ?""", documentId, versionId);
+    }
+
     @Override public Counts counts(UUID versionId, UUID documentId, EmbeddingProfile p) {
         return jdbc.queryForObject("""
                 SELECT count(*) AS total, count(e.chunk_id) AS indexed FROM rule_chunks c

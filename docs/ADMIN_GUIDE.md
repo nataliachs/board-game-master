@@ -102,7 +102,12 @@ The Game Master can answer rule questions with citations once rules are uploaded
   this game to players** to hide a game without deleting it.
 - **Saving lessons or setup steps publishes a new set.** New sessions use the latest set; sessions
   that already started keep the lessons and steps they began with.
-- There is no delete button. Hide a game instead.
+- There is no delete button for games. Hide a game instead.
+- **Rules sources can be removed.** In **4. Rules for questions**, open **Remove…** on a source's
+  row, tick the confirmation and choose **Remove source**. Its passages stop answering questions
+  straight away; past answers keep the quotes they showed. To replace a rulebook, upload the new
+  copy and remove the old one. Uploading the same rulebook twice without removing one gives
+  duplicate passages.
 
 ## Cover images
 

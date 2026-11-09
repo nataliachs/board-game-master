@@ -143,6 +143,17 @@ public class AdminUiController {
             admin.uploadRules(id, name, sourceType, sourceReference, fileName, bytes); return null; }, "#rules");
     }
 
+    @PostMapping("/games/{id}/rules/{documentId}/remove")
+    public String removeRules(@PathVariable UUID id, @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "") String confirm, RedirectAttributes flash) {
+        return redirectAfter(id, flash, null, () -> {
+            if (confirm.isBlank()) { throw new AdminFormException("Tick the box next to Remove to confirm."); }
+            var removed = admin.removeRules(id, documentId);
+            flash.addFlashAttribute("notice", "\"" + removed.documentName() + "\" was removed with its " + removed.passages()
+                    + " passages. It no longer answers questions; past answers keep their quotes.");
+            return null; }, "#rules");
+    }
+
     @PostMapping("/games/{id}/rules/{documentId}/index")
     public String index(@PathVariable UUID id, @PathVariable UUID documentId, RedirectAttributes flash) {
         return redirectAfter(id, flash, null, () -> {

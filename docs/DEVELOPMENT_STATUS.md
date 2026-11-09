@@ -35,6 +35,36 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## PDF answers rejected as QUOTE_MISMATCH — 2026-11-09
+
+First live test of an imported rulebook (Exploding Kittens): a basic question ("How do I win?")
+fell back with `reason=QUOTE_MISMATCH`. Two causes, both fixed:
+
+- `PdfRuleExtractor` sorted text by position, which reads straight across multi-column pages and
+  splices unrelated columns into one line (confirmed on the Dixit rulebook), so a clean sentence
+  quoted by the model did not exist in the stored text. It now keeps the PDF's own text order.
+  A two-column test PDF checks this; it fails with the old setting.
+- `SourceQuoteMatcher` required identical punctuation, while rulebooks use curly quotes,
+  apostrophes and en/em dashes and models often write straight ones. Those variants now match
+  each other; everything else stays literal, and the returned quote is still the original span.
+
+Rulebooks imported before this fix keep their old stored text; the punctuation fix applies to them
+at once, the column fix only to newly imported or uploaded PDFs. Extracting the Exploding Kittens
+rulebook locally confirmed the cause: the old order produced "…there's only for example 1 player
+left who wins the game. For a 4 player game, insert 3 Kittens." (two columns spliced), while the
+new order keeps "…until there's only 1 player left who wins the game." intact. Not yet confirmed
+with a live answer.
+
+**Removing a rules source.** Section 4 of the game editor has a **Remove…** fold-out per source,
+with a required confirmation tick. `RuleEmbeddingService.remove` deletes the source's vectors,
+passages and document in one transaction (`RuleVectorStore.deleteDocument`, then
+`RuleDocumentService.deleteDocument`); answers already in conversations keep their copied quotes.
+Games themselves still can't be deleted. `GameImportIntegrationTest` covers the missing
+confirmation, removal of the document, passages and a vector, the other source surviving, and a
+repeated removal. The fold-out was checked in the browser.
+
+Validation: `gradlew.bat check bootJar` passed: 421 unit and 110 integration tests.
+
 ## Import a game from a rulebook PDF — 2026-11-09
 
 `/admin → Add a game` has an **Import from a rulebook PDF** card. `GameImportService` extracts the

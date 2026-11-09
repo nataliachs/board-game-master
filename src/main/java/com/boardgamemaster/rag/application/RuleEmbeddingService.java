@@ -21,6 +21,18 @@ public class RuleEmbeddingService {
     public record IndexResult(UUID gameVersionId, UUID documentId, EmbeddingProfile profile,
             int totalChunks, int indexedChunks, int newlyIndexedChunks) { }
 
+    public record Removed(String documentName, int passages) { }
+
+    /** Removes a rules source with its passages and their vectors, so it no longer answers questions. */
+    @org.springframework.transaction.annotation.Transactional
+    public Removed remove(UUID versionId, UUID documentId) {
+        var document = documents.getDocument(versionId, documentId);
+        var removed = new Removed(document.getName(), document.getChunkCount());
+        store.deleteDocument(versionId, documentId);
+        documents.deleteDocument(versionId, documentId);
+        return removed;
+    }
+
     public IndexResult status(UUID versionId, UUID documentId) {
         documents.getDocument(versionId, documentId);
         var counts = store.counts(versionId, documentId, embeddings.profile());
