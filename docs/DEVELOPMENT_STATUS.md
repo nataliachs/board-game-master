@@ -36,6 +36,21 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Home page chat no longer asks for the admin password — 2026-11-10
+
+After the redesign was deployed, asking a question in the home page chat opened the browser's
+admin login prompt. The chat posts to `/api/v1/games/{gameId}/questions`, and `AdminAccessFilter`
+protected every non-GET request under `/api/v1/games/`. The local check missed it because no
+admin password is set locally, which leaves the filter open.
+
+`AdminAccessFilter` now leaves exactly `POST /api/v1/games/{gameId}/questions` open; every
+catalog and rule write stays protected, and `PaidRequestLimitFilter` still counts the request
+(20 per client per hour and 200 per day in `prod` by default). Visitors could already ask paid
+questions without a password inside a session, so this is a shorter path, not a new kind of
+access. `AdminAccessFilterTest` covers the open path, its near misses and other methods.
+Validation: 432 unit and 110 integration tests passed. Not yet verified on the live site, where
+the password is actually set.
+
 ## Home page redesign from the motion prototype — 2026-11-10
 
 Scope: presentation only; no milestone, backend, database or CSP change. Not committed or

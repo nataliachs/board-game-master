@@ -16,7 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Password-protects the admin pages and every catalog/content write API with HTTP Basic auth.
- * Players' pages, sessions and read-only catalog requests stay open.
+ * Players' pages, sessions, read-only catalog requests and rule questions stay open.
  *
  * <p>Locally (no {@code ADMIN_PASSWORD}) everything stays open, as before. When
  * {@code boardgame.admin.required=true} (the prod profile) and no password is configured,
@@ -25,6 +25,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class AdminAccessFilter extends OncePerRequestFilter {
+    private static final java.util.regex.Pattern RULE_QUESTION = java.util.regex.Pattern.compile("/api/v1/games/[^/]+/questions");
     private final boolean required;
     private final byte[] expectedUser;
     private final byte[] expectedPassword;
@@ -40,6 +41,9 @@ public class AdminAccessFilter extends OncePerRequestFilter {
     static boolean isProtected(String method, String path) {
         if (path.equals("/admin") || path.startsWith("/admin/")) { return true; }
         boolean write = !(method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS"));
+        // Asking a rule question is a POST but changes nothing: the home page chat sends it for
+        // any visitor. PaidRequestLimitFilter still caps it like every other AI request.
+        if (method.equals("POST") && RULE_QUESTION.matcher(path).matches()) { return false; }
         return write && (path.equals("/api/v1/games") || path.startsWith("/api/v1/games/")
                 || path.startsWith("/api/v1/game-versions/"));
     }
