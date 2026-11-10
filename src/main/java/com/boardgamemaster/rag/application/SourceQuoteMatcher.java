@@ -6,8 +6,10 @@ import java.util.regex.Pattern;
 /**
  * Allows only whitespace-run differences, typographic variants of the same punctuation (straight
  * versus curly quotes and apostrophes, hyphen versus en or em dash) and Markdown emphasis markers
- * around words, which rulebooks and models write differently. Returns a contiguous span of the
- * original source, so the shown quote is always verbatim.
+ * around words, which rulebooks and models write differently. A list bullet glyph that stands alone
+ * between whitespace in the source may also be left out of the quote, because models drop the bullets
+ * of extracted PDF lists when they quote across items. Returns a contiguous span of the original
+ * source, so the shown quote is always verbatim.
  */
 final class SourceQuoteMatcher {
     private static final Pattern SPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
@@ -16,6 +18,10 @@ final class SourceQuoteMatcher {
     private static final String DOUBLE_QUOTES = "\"“”";
     private static final String DASHES = "-‐‑–—";
     private static final String EMPHASIS = "(?:[*_]{1,3})?";
+    // Bullet glyphs only (including the private-use bullets PDF symbol fonts extract to); never hyphens,
+    // dashes or middle dots, which can carry meaning between words.
+    private static final String BULLETS = "\u2022\u25E6\u25AA\u25AB\u2023\u25CF\u25CB\u25A0\u25A1\uF0B7\uF0A7";
+    private static final String SEPARATOR = "(?U:\\s+(?:[" + BULLETS + "]\\s+)?)";
 
     private SourceQuoteMatcher() { }
 
@@ -27,7 +33,8 @@ final class SourceQuoteMatcher {
         // Every other non-whitespace character is literal. A whitespace run must remain a whitespace run:
         // this cannot merge words, remove punctuation, expand ellipses or change numbers. Markdown emphasis
         // markers (*, **, _, __) may wrap a source word, because models quote bold rule text without them.
-        String expression = String.join("(?U:\\s+)", java.util.Arrays.stream(normalized.split(" "))
+        // One standalone list bullet between words may be skipped (see BULLETS).
+        String expression = String.join(SEPARATOR,java.util.Arrays.stream(normalized.split(" "))
                 .map(word -> EMPHASIS + literal(word) + EMPHASIS).toList());
         var matched = Pattern.compile(expression).matcher(content);
         while (matched.find()) {

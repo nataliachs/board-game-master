@@ -82,6 +82,90 @@ class RuleRetrievalServiceTest {
         verify(client, times(1)).embed(anyString());
         verify(store, times(1)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
     }
+    private RuleVectorStore.Match scored(String section, double score) {
+        return new RuleVectorStore.Match(UUID.randomUUID(), document, version, section + " text.", "Rules reference",
+                com.boardgamemaster.rules.domain.RuleSourceType.RULEBOOK, "1", "en", "Original fixture", section, null, 0, 0, 10, score);
+    }
+
+    @Test void emptyAnswerSearchRetriesOnceInRulebookWordingWithTheSameThreshold() throws Exception {
+        // Dixit, live: "How do I win?" ranked "End of the game" first at 0.38, below the 0.5 threshold.
+        var rewriteClient = mock(QueryRewriteClient.class);
+        var service = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5),
+                new RuleDuplicateSuppressor(), (query, candidates) -> candidates,
+                new ContextualQueryRewriter(rewriteClient, new com.fasterxml.jackson.databind.ObjectMapper(), new QueryRewriteProperties(true)));
+        var casual = new Embedding(List.of(1f, 0f, 0f));
+        var expanded = new Embedding(List.of(0f, 1f, 0f));
+        String cue = "How does a player win, and when does the game end?";
+        when(client.profile()).thenReturn(profile);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(client.embed("How do I win?")).thenReturn(casual);
+        when(client.embed(cue)).thenReturn(expanded);
+        when(store.search(eq(version), eq(profile), eq(casual), anyInt(), any())).thenReturn(List.of(scored("End of the game", .38)));
+        var endOfGame = scored("End of the game", .62);
+        when(store.search(eq(version), eq(profile), eq(expanded), anyInt(), any())).thenReturn(List.of(endOfGame, scored("Components", .41)));
+        when(rewriteClient.rewrite(any())).thenAnswer(invocation -> {
+            LlmRequest request = invocation.getArgument(0);
+            var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(request.input());
+            assertThat(data.path("question").asText()).isEqualTo("How do I win?");
+            assertThat(data.path("game").asText()).isEqualTo("Dixit");
+            assertThat(request.instructions()).contains("Never answer the question");
+            return java.util.Optional.of(cue);
+        });
+
+        var result = service.searchQuestion(version, "How do I win?", new RuleRetrievalService.Expansion("Dixit", "2021"));
+        assertThat(result.matches()).as("the retry keeps the 0.5 threshold").containsExactly(endOfGame);
+        assertThat(result.resolvedQuestion()).as("a retry cue is never shown to the answer step").isNull();
+        verify(rewriteClient, times(1)).rewrite(any());
+    }
+
+    @Test void retryIsSkippedWhenTheFirstSearchMatchesOrForPlainSearch() {
+        var rewriteClient = mock(QueryRewriteClient.class);
+        var service = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5),
+                new RuleDuplicateSuppressor(), (query, candidates) -> candidates,
+                new ContextualQueryRewriter(rewriteClient, new com.fasterxml.jackson.databind.ObjectMapper(), new QueryRewriteProperties(true)));
+        var vector = new Embedding(List.of(1f, 0f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(client.embed(anyString())).thenReturn(vector);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(scored("End of the game", .7)));
+        assertThat(service.searchQuestion(version, "How does the game end?", new RuleRetrievalService.Expansion("Dixit", null)).matches()).hasSize(1);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(scored("Setup", .2)));
+        assertThat(service.search(version, "How do I win?", null).matches()).isEmpty();
+        verifyNoInteractions(rewriteClient);
+    }
+
+    @Test void failedOrDeclinedRetryKeepsTheEmptyResult() {
+        var rewriteClient = mock(QueryRewriteClient.class);
+        var service = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5),
+                new RuleDuplicateSuppressor(), (query, candidates) -> candidates,
+                new ContextualQueryRewriter(rewriteClient, new com.fasterxml.jackson.databind.ObjectMapper(), new QueryRewriteProperties(true)));
+        var vector = new Embedding(List.of(1f, 0f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(client.embed(anyString())).thenReturn(vector);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(scored("Setup", .3)));
+        when(rewriteClient.rewrite(any())).thenReturn(java.util.Optional.empty())
+                .thenThrow(new LlmException(LlmException.Code.LLM_TIMEOUT, "safe error"));
+        var expansion = new RuleRetrievalService.Expansion(null, null);
+        assertThat(service.searchQuestion(version, "What's the weather?", expansion).matches()).isEmpty();
+        assertThat(service.searchQuestion(version, "How do I win?", expansion).matches()).isEmpty();
+        verify(client, times(2)).embed(anyString());
+        verify(store, times(2)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
+    }
+
+    @Test void disabledRewritingDisablesTheRetry() {
+        var rewriteClient = mock(QueryRewriteClient.class);
+        var service = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5),
+                new RuleDuplicateSuppressor(), (query, candidates) -> candidates,
+                new ContextualQueryRewriter(rewriteClient, new com.fasterxml.jackson.databind.ObjectMapper(), new QueryRewriteProperties(false)));
+        var vector = new Embedding(List.of(1f, 0f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(client.embed(anyString())).thenReturn(vector);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(scored("Setup", .3)));
+        assertThat(service.searchQuestion(version, "How do I win?", new RuleRetrievalService.Expansion("Dixit", null)).matches()).isEmpty();
+        verifyNoInteractions(rewriteClient);
+    }
     private final RuleDocumentService documents = mock(RuleDocumentService.class);
     private final RuleVectorStore store = mock(RuleVectorStore.class);
     private final EmbeddingClient client = mock(EmbeddingClient.class);
