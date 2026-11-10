@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script><script src="/js/voice.js" defer></script><script src="/js/conversation.js" defer></script></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#140d1c"><title th:text="${page.game.name + ' · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"><script src="/js/narration.js" defer></script><script src="/js/voice.js" defer></script><script src="/js/conversation.js" defer></script></head>
 <body th:with="currentSession=${page.lesson.session},stage=${page.lesson.session.stage.name()}"><header th:replace="~{fragments :: header}"></header>
 <div class="stage-bar">
   <div>
@@ -65,7 +65,7 @@
   <aside class="gm-panel" aria-label="Game Master">
     <section class="card ask-card" th:if="${stage != 'COMPLETED'}" aria-labelledby="ask-title">
       <div class="ask-head">
-        <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 2 32 10v16L18 34 4 26V10Z" fill="#F0B43C"/><path d="M12 15h12M12 20h8" stroke="#3B2A22" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><path d="M18 2 32 10v16L18 34 4 26V10Z" fill="#f2b45a"/><path d="M12 15h12M12 20h8" stroke="#2a1606" stroke-width="2.4" stroke-linecap="round"/></svg>
         <div><h2 id="ask-title">Ask the Game Master</h2><p>Your question won't advance the lesson or setup step.</p></div>
       </div>
       <div class="ask-body">
