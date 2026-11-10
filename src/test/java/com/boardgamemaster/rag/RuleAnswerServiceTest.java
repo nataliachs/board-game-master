@@ -92,7 +92,7 @@ class RuleAnswerServiceTest {
                 RuleSourceType.RULEBOOK, "1", "en", "Original test text", "Moving", 2, 0, 10, 25, score);
     }
     private void evidence(List<RuleVectorStore.Match> matches) {
-        when(retrieval.search(version, question, null)).thenReturn(new RuleRetrievalService.SearchResult(version,
+        when(retrieval.searchQuestion(eq(version), eq(question), any())).thenReturn(new RuleRetrievalService.SearchResult(version,
                 new EmbeddingProfile("fixture", "test", 3), 5, matches));
     }
     private LlmResponse response(RuleVectorStore.Match match) {
@@ -127,7 +127,7 @@ class RuleAnswerServiceTest {
         var source = new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, rule, "Original rules",
                 RuleSourceType.RULEBOOK, "1", "en", "Original fictional fixture", "Setup", 1, 0, 0, rule.length(), .7);
         String current = "Can I keep " + quantity + " mission cards from my starting deal?";
-        when(retrieval.search(version, current, null)).thenReturn(new RuleRetrievalService.SearchResult(version,
+        when(retrieval.searchQuestion(eq(version), eq(current), any())).thenReturn(new RuleRetrievalService.SearchResult(version,
                 new EmbeddingProfile("fixture", "test", 3), 1, List.of(source)));
         when(llm.generate(any())).thenAnswer(invocation -> {
             LlmRequest request = invocation.getArgument(0);
@@ -206,7 +206,7 @@ class RuleAnswerServiceTest {
         assertThat(requests.getAllValues().get(1).input()).isEqualTo(requests.getAllValues().get(0).input());
         assertThat(requests.getAllValues().get(1).instructions()).contains("Citation validation feedback", source.chunkId().toString(),
                 "sufficientEvidence=false", "NOT evidence", "contiguous substring").doesNotContain(rejected, "Rejected answer");
-        verify(retrieval).search(version, question, null);
+        verify(retrieval).searchQuestion(eq(version), eq(question), any());
         assertThat(logs.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList())
                 .anyMatch(m -> m.contains("Rule answer correction completed:") && m.contains("outcome=ACCEPTED"))
                 .noneMatch(m -> m.startsWith("Rule answer fallback:") || m.contains(rejected));

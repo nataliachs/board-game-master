@@ -50,16 +50,27 @@ public class RuleRetrievalService {
             this(versionId, profile, topK, matches, null, null);
         }
     }
+    /** Game context for the one empty-search retry of an answer search; null disables the retry. */
+    public record Expansion(String game, String edition) { }
+
     public SearchResult search(UUID versionId, String query, Integer topK) { return search(versionId, query, topK, null, null); }
+
+    /** Answer search for a standalone question: like {@link #search} with defaults, plus the empty-search retry. */
+    public SearchResult searchQuestion(UUID versionId, String question, Expansion expansion) {
+        return searchInternal(versionId, question, null, null, null, question, null, expansion);
+    }
 
     public SearchResult searchContextual(UUID versionId, String question, AnswerConversation conversation) {
         embeddings.validateText(question);
         String query = conversation.retrievalQuery(question, Math.min(4000, embeddings.maxInputCharacters()));
-        return searchInternal(versionId, query, null, null, null, question, conversation);
+        return searchInternal(versionId, query, null, null, null, question, conversation, expansionOf(conversation));
     }
 
     public SearchResult search(UUID versionId, String query, Integer topK, Double threshold, RetrievalFilters requested) {
-        return searchInternal(versionId, query, topK, threshold, requested, null, null);
+        return searchInternal(versionId, query, topK, threshold, requested, null, null, null);
+    }
+    private static Expansion expansionOf(AnswerConversation conversation) {
+        return conversation == null ? new Expansion(null, null) : new Expansion(conversation.game(), conversation.edition());
     }
 
     /** Answer-only candidate pool; ordinary search retains its configured threshold. */
@@ -74,11 +85,11 @@ public class RuleRetrievalService {
                 && (!Double.isFinite(threshold) || threshold < -1 || threshold > 1)) {
             throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Invalid evidence review search bounds");
         }
-        return searchInternal(versionId, query, count, floor, filters, question, conversation);
+        return searchInternal(versionId, query, count, floor, filters, question, conversation, expansionOf(conversation));
     }
 
     private SearchResult searchInternal(UUID versionId, String query, Integer topK, Double threshold,
-            RetrievalFilters requested, String originalQuestion, AnswerConversation conversation) {
+            RetrievalFilters requested, String originalQuestion, AnswerConversation conversation, Expansion expansion) {
         long started = System.nanoTime();
         var version = documents.getVersion(versionId);
         embeddings.validateText(query);
@@ -107,7 +118,20 @@ public class RuleRetrievalService {
         var vector = embeddings.embed(query.strip());
         var candidates = store.search(versionId, profile, vector, config.candidateLimit(), filters);
         RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
-        var eligible = candidates.stream().filter(m -> Double.isFinite(m.cosineSimilarity()) && m.cosineSimilarity() >= minimum).toList();
+        var eligible = eligible(candidates, minimum);
+        // A short or casual question ("How do I win?") can rank the right passages first yet score below the
+        // threshold. Answer searches retry once with the question in rulebook wording; the threshold is unchanged.
+        if (eligible.isEmpty() && !candidates.isEmpty() && expansion != null && resolved == null && queryRewriter != null) {
+            var expanded = queryRewriter.expand(originalQuestion, expansion.game(), expansion.edition(),
+                    Math.min(4000, embeddings.maxInputCharacters()));
+            if (expanded.isPresent()) {
+                query = expanded.get();
+                candidates = store.search(versionId, profile, embeddings.embed(query.strip()), config.candidateLimit(), filters);
+                RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
+                eligible = eligible(candidates, minimum);
+                LOG.info("Empty-search retry completed: gameVersionId={}, matches={}", versionId, eligible.size());
+            }
+        }
         var unique = duplicates.suppress(eligible, config.duplicateOverlap());
         List<RuleVectorStore.Match> ranked;
         try {
@@ -120,6 +144,9 @@ public class RuleRetrievalService {
         var found = result(versionId, profile, limit, filters, minimum, ranked.stream().limit(limit).toList(),
                 candidates.size(), candidates.size() - eligible.size(), eligible.size() - unique.size(), started);
         return new SearchResult(found.gameVersionId(), found.profile(), found.topK(), found.matches(), found.diagnostics(), resolved);
+    }
+    private static List<RuleVectorStore.Match> eligible(List<RuleVectorStore.Match> candidates, double minimum) {
+        return candidates.stream().filter(m -> Double.isFinite(m.cosineSimilarity()) && m.cosineSimilarity() >= minimum).toList();
     }
     private SearchResult result(UUID version, EmbeddingProfile profile, int topK, RetrievalFilters filters, double threshold,
             List<RuleVectorStore.Match> matches, int count, int below, int duplicateCount, long started) {

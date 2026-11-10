@@ -45,7 +45,7 @@ Active configuration:
 | `RAG_SIMILARITY_THRESHOLD` | `0.5`; minimum cosine similarity, finite −1 to 1; blank legacy values use the default |
 | `RAG_CANDIDATE_LIMIT` | `200`; candidates considered before deduplication/reranking, 50–500 |
 | `RAG_DUPLICATE_OVERLAP` | `0.85`; minimum five-word-shingle overlap for contained source ranges, 0.5–1 |
-| `RAG_QUERY_REWRITE_ENABLED` | `false` locally, `true` in the `prod` profile; rewrites short session follow-ups ("how about the other players?") into standalone searches using the previous question; adds up to one LLM call using `LLM_*` settings |
+| `RAG_QUERY_REWRITE_ENABLED` | `false` locally, `true` in the `prod` profile; rewrites short session follow-ups ("how about the other players?") into standalone searches using the previous question; adds up to one LLM call using `LLM_*` settings. Also enables the empty-search retry: when an answer search finds no passage above `RAG_SIMILARITY_THRESHOLD`, the question is restated once in rulebook wording ("How do I win?") and searched again with the same threshold; one more LLM call, only on a miss |
 | `RAG_EVIDENCE_REVIEW_ENABLED` | `false`; experimental answer-only relevance selection and cited-answer support review; adds up to two LLM calls |
 | `RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR` | `0.35`; experimental pool/quote similarity floor, finite 0–1; applies only with review enabled |
 | `RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT` | `12`; candidate passages before relevance selection, 1–20 |

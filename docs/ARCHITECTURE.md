@@ -310,6 +310,11 @@ long, no-history and empty-index requests skip it. A separate strict Responses s
 `query` and `resolved`; it shares the configured LLM's compatible parameters and response envelope
 handling. The last two bounded USER questions, game/edition, stage and authored topic titles are
 untrusted rewrite context, never rule evidence; assistant claims and authored instructions are excluded.
+The same setting enables one empty-search retry for answer searches (home page and session questions,
+not the explicit-parameter search API): when no candidate passes the similarity threshold and no
+follow-up rewrite was applied, `ContextualQueryRewriter.expand` restates the question (up to 300 code
+points, with the game name and edition as context) in rulebook wording and the search runs once more
+with the unchanged threshold. The retry cue is never passed to the answer step.
 Instructions explicitly expand risk/downside into consequence or penalty search terms and omit
 unnecessary game/edition framing. They allow consequences later than the current stage without
 asserting an unsupported penalty, amount, condition or outcome. Live effectiveness remains unverified.

@@ -36,6 +36,26 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Short questions found no rules — 2026-11-10
+
+Dixit on the home page, "How do I win?" and "What can I do on my turn?", fell back with
+`NO_RETRIEVED_EVIDENCE`; Ticket to Ride and Exploding Kittens showed the same fallback on short
+questions earlier that day. With retrieval diagnostics enabled (`RAG_QUERY_DIAGNOSTICS_LEVEL=DEBUG`,
+revision `board-game-master-00027-k4m`, kept on at the user's request), "How do I win?" ranked the
+right passages first ("End of the game" 0.377, "Object of the game" 0.360) but every score was below
+the 0.5 threshold: a three-word question is not similar enough to a rule paragraph. Home page
+questions were searched exactly as typed; the existing rewriter only ran for session follow-ups.
+
+Answer searches (home page and session questions) now retry once when no passage passes the
+threshold: `ContextualQueryRewriter.expand` restates the question in rulebook wording, without
+answering it or adding facts, and the search runs again with the same threshold. The retry cue is
+never passed to the answer step. It follows `RAG_QUERY_REWRITE_ENABLED` (on in `prod`), is skipped
+when a session follow-up was already rewritten, and costs one LLM call only on a miss. The search
+API with explicit `topK`/threshold/filters stays deterministic. `RuleRetrievalServiceTest` covers the
+retry, the skip cases, a declined or failed rewrite and the disabled setting.
+Validation: 438 unit and 110 integration tests passed. Not yet retested live; whether the restated
+Dixit questions clear 0.5 is unverified.
+
 ## Azul quotes across bulleted lists were rejected — 2026-11-10
 
 Azul (uploaded PDF rulebook), "what to do on my turn?", fell back with `QUOTE_MISMATCH` on both
@@ -47,7 +67,7 @@ list item (`5).\n•\tPlace the tiles`). `SourceQuoteMatcher` now allows one sta
 (•, ◦, ▪, ▫, ‣, ●, ○, ■, □ and the private-use PDF bullets U+F0B7/U+F0A7) between whitespace to be
 skipped, and still returns the original span; hyphens, dashes, middle dots, repeated bullets and
 bullets attached to words stay literal. Existing documents benefit without re-uploading.
-Validation: full `gradlew test` passed. Not yet retested live.
+Validation: unit tests passed. Not yet retested live.
 
 Known limitation: the Azul PDF extraction interleaves worked-example captions ("Martin picks the
 yellow tile…") with the rule text, which can still weaken answers.

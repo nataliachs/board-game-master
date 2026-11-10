@@ -48,8 +48,13 @@ public class RuleAnswerService {
             throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Question must be nonblank and at most 4000 characters");
         }
         long started = System.nanoTime();
-        UUID versionId = games.resolveDefaultVersion(gameId, null).getId();
-        return answer(gameId, versionId, question, topK, threshold, filters, null, started);
+        var version = games.resolveDefaultVersion(gameId, null);
+        return answer(gameId, version.getId(), question, topK, threshold, filters, null, started,
+                () -> new RuleRetrievalService.Expansion(gameName(gameId), version.getEdition()));
+    }
+    private String gameName(UUID gameId) {
+        try { var game = games.getGame(gameId); return game == null ? null : game.getName(); }
+        catch (RuntimeException e) { return null; } // The name only helps the retry cue; never fail a question for it.
     }
 
     public RuleAnswer askPinned(UUID gameId, UUID versionId, String question, AnswerConversation conversation) {
@@ -57,17 +62,18 @@ public class RuleAnswerService {
             throw new RetrievalException(RetrievalException.Code.INVALID_SEARCH, "Question must be nonblank and at most 4000 characters");
         }
         games.getVersion(gameId, versionId); // Ownership check without resolving a mutable catalog default.
-        return answer(gameId, versionId, question, null, null, null, conversation, System.nanoTime());
+        return answer(gameId, versionId, question, null, null, null, conversation, System.nanoTime(), () -> null);
     }
 
     private RuleAnswer answer(UUID gameId, UUID versionId, String question, Integer topK, Double threshold,
-            RetrievalFilters filters, AnswerConversation conversation, long started) {
+            RetrievalFilters filters, AnswerConversation conversation, long started,
+            java.util.function.Supplier<RuleRetrievalService.Expansion> expansion) {
         try {
             boolean reviewed = review != null && review.enabled();
             var retrieved = reviewed ? retrieval.searchForReview(versionId, question.strip(), conversation, topK, threshold, filters, review)
                     : conversation != null ? retrieval.searchContextual(versionId, question.strip(), conversation)
                     : topK == null && threshold == null && filters == null
-                    ? retrieval.search(versionId, question.strip(), null)
+                    ? retrieval.searchQuestion(versionId, question.strip(), expansion.get())
                     : retrieval.search(versionId, question.strip(), topK, threshold, filters);
             var prompt = conversation == null ? prompts.build(versionId, question.strip(), retrieved.matches())
                     : prompts.build(versionId, question.strip(), retrieved.matches(), conversation, retrieved.resolvedQuestion());
