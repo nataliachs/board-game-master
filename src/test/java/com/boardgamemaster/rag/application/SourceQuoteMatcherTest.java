@@ -69,6 +69,22 @@ class SourceQuoteMatcherTest {
         assertThat(SourceQuoteMatcher.find("snake_case name", "snakecase name")).isEmpty();
         assertThat(SourceQuoteMatcher.find("Draw ****one card.", "Draw one card.")).isEmpty();
     }
+    @Test void standaloneListBulletsBetweenWordsAreSkippedAndTheOriginalSpanReturned() {
+        // Azul rulebook extraction: the model quoted across the list items without their bullets.
+        String source = "line has 5).\n•\tPlace the tiles, one by one, from right\nto left.\n•\tIf the pattern line already\nholds tiles.";
+        assertThat(SourceQuoteMatcher.find(source,
+                "line has 5). Place the tiles, one by one, from right to left. If the pattern line already holds tiles."))
+                .contains(source);
+        assertThat(SourceQuoteMatcher.find("Draw.\n Discard.", "Draw. Discard.")).contains("Draw.\n Discard.");
+        assertThat(SourceQuoteMatcher.find(source, "line has 5). • Place the tiles,")).contains("line has 5).\n•\tPlace the tiles,");
+    }
+    @Test void bulletSkippingDoesNotLoosenAnythingElse() {
+        assertThat(SourceQuoteMatcher.find("Pay 2 - 3 cards.", "Pay 2 3 cards.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Pay 2 · 3 cards.", "Pay 2 3 cards.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Draw •• two.", "Draw two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Draw•two.", "Draw two.")).isEmpty();
+        assertThat(SourceQuoteMatcher.find("Draw • one • two.", "Draw two.")).isEmpty();
+    }
     @Test void restoredQuotesRemainBounded() {
         assertThat(SourceQuoteMatcher.find("Keep" + " ".repeat(1000) + "two.", "Keep two.")).isEmpty();
         assertThat(SourceQuoteMatcher.find("x".repeat(1001), "x".repeat(1001))).isEmpty();

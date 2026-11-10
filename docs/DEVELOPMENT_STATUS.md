@@ -36,6 +36,22 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Azul quotes across bulleted lists were rejected — 2026-11-10
+
+Azul (uploaded PDF rulebook), "what to do on my turn?", fell back with `QUOTE_MISMATCH` on both
+attempts although retrieval was good (eight passages, 0.56–0.61). With quote diagnostics enabled
+(`ANSWER_QUOTE_DIAGNOSTICS_LEVEL=DEBUG`, revision `board-game-master-00026-gms`, kept on at the
+user's request until they ask to remove it), the rejected quote was the page-3 pattern-line rules
+word for word, except that the model left out the `•` bullets the PDF extraction keeps before each
+list item (`5).\n•\tPlace the tiles`). `SourceQuoteMatcher` now allows one standalone bullet glyph
+(•, ◦, ▪, ▫, ‣, ●, ○, ■, □ and the private-use PDF bullets U+F0B7/U+F0A7) between whitespace to be
+skipped, and still returns the original span; hyphens, dashes, middle dots, repeated bullets and
+bullets attached to words stay literal. Existing documents benefit without re-uploading.
+Validation: full `gradlew test` passed. Not yet retested live.
+
+Known limitation: the Azul PDF extraction interleaves worked-example captions ("Martin picks the
+yellow tile…") with the rule text, which can still weaken answers.
+
 ## Session, review, error and admin pages restyled — 2026-11-10
 
 Scope: presentation only; no backend, database, CSP or markup-structure change.
