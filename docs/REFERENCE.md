@@ -764,7 +764,10 @@ to your private `.env`, restart the application and reproduce the question once.
 the rejected `quote`, its `citedContent`, and `exactQuoteFoundInOtherChunkIds` (other prompt chunks
 containing that exact quote). Text is JSON-escaped so whitespace differences remain visible; source
 content is capped at 8000 characters with `contentTruncated` and the original length recorded.
-This opt-in output contains imported rule text and model-generated quotes: keep it local and out of Git.
+The same switch logs `Rule answer rejection detail` (reason, question, `proposedAnswer`, cited
+quotes) when an answer is withheld for `MODEL_INSUFFICIENT_EVIDENCE` or `ANSWER_SUPPORT_REJECTED`.
+This opt-in output contains imported rule text, player questions and model-generated answers and
+quotes: keep it local and out of Git.
 Set `ANSWER_QUOTE_DIAGNOSTICS_LEVEL=OFF` and restart after capture. OFF is the default, independent
 of ordinary pipeline logging. This adds no provider calls and does not relax citation checks.
 

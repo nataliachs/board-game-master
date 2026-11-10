@@ -224,8 +224,12 @@ A separate `com.boardgamemaster.rag.quotediagnostics` logger is OFF by default v
 comparison with attempt and source IDs, plus other prompt chunk IDs containing the exact quote.
 JSON escaping preserves whitespace for comparison without multi-line log injection. Passages are
 capped at 8000 UTF-16 characters with surrogate-safe truncation and explicit original length/truncation
-metadata; quotes retain the answer-contract 1000-character cap. No question/full answer is emitted.
-Only this explicit diagnostic can log quote/source text; ordinary INFO diagnostics remain metadata-only.
+metadata; quotes retain the answer-contract 1000-character cap. The quote-mismatch detail emits no
+question or full answer. The same logger also emits `Rule answer rejection detail` when an answer
+is withheld because the model reported insufficient evidence or the cited-answer support review
+rejected it: reason, question, proposed answer and cited quotes, so a caught mistake can be told
+apart from a false rejection. Only this explicit diagnostic can log question, answer, quote or
+source text; ordinary INFO diagnostics remain metadata-only.
 Captures are private local debugging material, not repository fixtures or proof of semantic correctness.
 
 `SourceQuoteMatcher` permits whitespace-run differences (including line breaks, tabs and Unicode spaces)
@@ -297,8 +301,12 @@ use 120-character instruction/explanation cues; otherwise those cues retain thei
 This length heuristic reduces authored-procedure dominance and prioritizes the preceding user topic
 under tight budgets; it does not identify intent or resolve references semantically, and can include
 irrelevant history for short topic changes. Prior assistant claims remain excluded from retrieval.
-The default path still uses one query embedding and one vector search, without a rewrite-model
-call or game-specific rules. The complete structured answer context is not shortened by this policy.
+When no rewrite produced a standalone query, a session question is also embedded and searched on
+its own, and each passage keeps the better of its two cosine scores (never a raised score). The
+attached cues help a vague follow-up but dilute a clear question, so a lesson or setup text can no
+longer push the relevant passages under the threshold. This is two query embeddings and two
+vector searches, still without a rewrite-model call or game-specific rules; stateless questions
+keep one of each. The complete structured answer context is not shortened by this policy.
 With Unicode-safe truncation, the assembled query respects both the
 configured embedding character limit and the 4000-character question limit. This deterministic
 topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.

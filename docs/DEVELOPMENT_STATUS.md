@@ -36,6 +36,31 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Withheld answers are logged; session questions also searched alone — 2026-11-10
+
+Production settings (user-approved, not code): `gpt-5.6-luna` since revision 00031; revision
+`board-game-master-00032-ljl` raised `LLM_REASONING_EFFORT` to `medium` and turned on
+`RAG_EVIDENCE_REVIEW_ENABLED`. Reason: with `low` effort, "A plays Attack, B plays Attack, C Nopes"
+was answered "C takes 2 turns" from correct Attack and Nope quotes; by those rules B's Attack never
+happened, so B still takes A's 2 turns. Exact-quote validation cannot catch such reasoning errors.
+Retest with review on: relevance selection kept Attack (0.49, under the 0.5 baseline cutoff) and
+Nope, then the support review rejected the drafted answer (`ANSWER_SUPPORT_REJECTED`, 16 s). The
+drafted text was not logged, so a caught error could not be told from a false rejection.
+
+- `Rule answer rejection detail` (reason, question, proposed answer, cited quotes) is now logged on
+  the existing opt-in quote diagnostics logger for `MODEL_INSUFFICIENT_EVIDENCE` and
+  `ANSWER_SUPPORT_REJECTED`; nothing is logged with the switch OFF.
+- Session questions were searched only with the previous question and up to 800 characters each of
+  setup instruction and lesson explanation attached (questions over 80 characters never reach the
+  rewriter). On the welcome lesson, "Overview of the game" scored level with "Nope" (0.645/0.646);
+  on the Defuse setup step, "Setup" outranked Attack and Nope. Unless a rewrite made the question
+  standalone, it is now also searched on its own and each passage keeps its better real score:
+  one more embedding and vector search, no model call.
+
+`QuoteMismatchDiagnosticsTest`, `RuleRetrievalServiceTest` (two-search merge, plain search once) and
+the updated `EvidenceReviewTest` cover this. Validation: 441 unit and 110 integration tests passed.
+Not yet retested live.
+
 ## Plain-language references for Azul and Exploding Kittens — 2026-11-10
 
 Live retest after PR #27 (revision `board-game-master-00029-lct`): the empty-search retry ran for

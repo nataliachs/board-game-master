@@ -87,8 +87,10 @@ class EvidenceReviewTest {
             assertThat(s.quote()).isEqualTo(quote);
         });
         verify(client, times(1)).selectEvidence(any()); verify(client, times(1)).supportsAnswer(any());
-        verify(llm, times(1)).generate(any()); verify(embeddings, times(1)).embed(anyString());
-        verify(store, times(1)).search(eq(version), eq(profile), any(), anyInt(), any());
+        // A session question is searched with its context and on its own: two embeddings, no extra model call.
+        verify(llm, times(1)).generate(any()); verify(embeddings, times(2)).embed(anyString());
+        verify(embeddings).embed("What's the risk?");
+        verify(store, times(2)).search(eq(version), eq(profile), any(), anyInt(), any());
     }
     @ParameterizedTest @ValueSource(strings = {"empty", "unknown", "duplicate", "null", "null-id", "error"})
     void invalidOrUnresolvedSelectionFailsClosed(String mode) {
