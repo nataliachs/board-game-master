@@ -71,6 +71,11 @@ boardgame:
     api-key: ${LLM_API_KEY:}
     timeout: ${LLM_TIMEOUT:30s}
     max-output-tokens: ${LLM_MAX_OUTPUT_TOKENS:800}
+  llm-checks:
+    # Optional faster model for query rewriting and evidence review (the calls before and after each
+    # answer). Blank uses LLM_MODEL. Shares LLM_PROVIDER, key, timeout and output limit.
+    model: ${LLM_CHECK_MODEL:}
+    reasoning-effort: ${LLM_CHECK_REASONING_EFFORT:none}
   game-draft:
     # Drafting a whole game from a rulebook PDF in /admin: uses the LLM provider, model and key above.
     max-output-tokens: ${GAME_DRAFT_MAX_OUTPUT_TOKENS:16000}

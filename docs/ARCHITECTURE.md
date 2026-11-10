@@ -311,6 +311,14 @@ With Unicode-safe truncation, the assembled query respects both the
 configured embedding character limit and the 4000-character question limit. This deterministic
 topic cue is not a query-rewriting model and does not establish live semantic follow-up quality.
 
+The supporting model calls, query rewriting (`QueryRewriteClient`) and evidence review
+(`EvidenceReviewClient`), can use a separate model through optional `LLM_CHECK_MODEL` and
+`LLM_CHECK_REASONING_EFFORT` (`LlmCheckProperties`). `LlmConfiguration` then wires those two ports to a
+second OpenAI Responses client that shares provider, key, timeout and output limit; answer generation
+and game drafting keep `LLM_MODEL`. A blank check model, or a non-OpenAI answer client, keeps the
+single shared client. These calls run in sequence around every answer, so a faster check model
+shortens answers without removing the checks.
+
 Optional `RAG_QUERY_REWRITE_ENABLED=true` enables `ContextualQueryRewriter` after ownership,
 filter/profile validation and an existing-index check. Short session questions (at most 80 Unicode
 code points) with retained USER history get at most one `QueryRewriteClient` call; stateless,

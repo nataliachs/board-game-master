@@ -56,6 +56,8 @@ Active configuration:
 | `LLM_API_KEY` | Required when the LLM is enabled; private and independent of the embedding key setting |
 | `LLM_TIMEOUT` | `30s`; connect/request timeout, greater than zero and at most 120s |
 | `LLM_MAX_OUTPUT_TOKENS` | `800`; output budget, 128–4096; incomplete output fails safely |
+| `LLM_CHECK_MODEL` | blank (uses `LLM_MODEL`); optional faster model for query rewriting (follow-ups, empty-search retry) and evidence review (relevance selection, support check). Answers keep `LLM_MODEL`. Shares provider, key, timeout and output limit |
+| `LLM_CHECK_REASONING_EFFORT` | `none`; same rules as `LLM_REASONING_EFFORT` for `LLM_CHECK_MODEL`; ignored when the check model is blank. An invalid pair stops startup |
 | `ANSWER_MINIMUM_EVIDENCE_SIMILARITY` | `0.5`; baseline acceptance gate for cited evidence, 0 to below the HIGH gate |
 | `ANSWER_HIGH_EVIDENCE_SIMILARITY` | `0.8`; HIGH confidence gate, above the minimum and at most 1 |
 | `ANSWER_MAX_CONTEXT_CHARACTERS` | `24000`; serialized question/evidence budget, 1000–160000 UTF-16 characters |
