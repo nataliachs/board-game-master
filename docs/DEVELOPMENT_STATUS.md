@@ -36,6 +36,27 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Plain-language references for Azul and Exploding Kittens — 2026-11-10
+
+Live retest after PR #27 (revision `board-game-master-00029-lct`): the empty-search retry ran for
+every short question and lifted most scores by 0.1–0.3. Dixit and Ticket to Ride, which use
+Markdown references with one topic per heading, answered "How do I win?", "What can I do on my
+turn?" and "How does the game end?". Azul and Exploding Kittens, imported directly from PDF,
+still fell back on some of them with `NO_RETRIEVED_EVIDENCE` (best reworded scores 0.41–0.49):
+their passages have no section titles and mix example captions, image labels and, for Exploding
+Kittens, rotated cover text into the rules, so no passage matches one topic strongly.
+
+Added `docs/rules/azul-rules-reference.md` and `docs/rules/exploding-kittens-rules-reference.md`:
+original plain-language summaries written from the uploaded rule text, one `##` topic per section
+(each under 900 characters, so each section is its own passage). Details not stated in the
+uploaded text and flagged for the user to check: Azul floor-line values (-1, -1, -2, -2, -2, -3,
+-3; consistent with the rulebook's -8 example) and component counts inferred from setup;
+Exploding Kittens edition, player count and card total read from fragmented cover text. To use
+them, upload each file in /admin and remove the PDF document. Not yet uploaded or retested live.
+
+Known limitation: PDF import keeps no headings and splits by length rather than topic, so other
+PDF rulebooks may show the same weak retrieval until the import is improved.
+
 ## Short questions found no rules — 2026-11-10
 
 Dixit on the home page, "How do I win?" and "What can I do on my turn?", fell back with
