@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title th:text="${page.game.name + ' · Admin · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"></head>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#140d1c"><title th:text="${page.game.name + ' · Admin · Board Game Master'}"></title><link rel="stylesheet" href="/css/demo.css"></head>
 <body th:with="game=${page.game}"><header th:replace="~{fragments :: header}"></header>
 <main class="admin-layout">
   <a href="/admin">← Back to the game library</a>

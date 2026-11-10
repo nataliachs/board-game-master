@@ -36,6 +36,29 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Session, review, error and admin pages restyled — 2026-11-10
+
+Scope: presentation only; no backend, database, CSP or markup-structure change.
+
+At the project owner's request the "café at night" look from the home page now covers every
+page. `demo.css` was rewritten with the home page's palette and self-hosted fonts and its unused
+old home-page rules were removed; class names are unchanged, so the templates only gained the
+shared logo and navigation in the header fragment (which also fixes its link to the removed
+`#library` anchor) and a theme colour. These pages keep motion small on purpose: cards settle in
+on load, the current lesson marker pulses, the newest message pops in, all disabled under
+`prefers-reduced-motion`. Admin received the same theme through the shared stylesheet and no
+page-specific design work. `UI_GUIDE.md` now describes one look for the whole product.
+
+The password fix below was also confirmed on the live site after revision `00023-nz9`: an empty
+question posted without credentials returned 400 (validation) where it had returned 401, and
+creating a game without credentials still returned 401.
+
+Validation: 432 unit and 110 integration tests passed. Checked in the running local application (AI off)
+at desktop and phone width with no horizontal scroll: lesson, setup step, review, error, admin
+list, admin editor and add-a-game pages. Not seen in a browser: the playing and completed
+states, a conversation with real messages and citations, and the voice and narration panels
+(those need AI providers).
+
 ## Home page chat no longer asks for the admin password — 2026-11-10
 
 After the redesign was deployed, asking a question in the home page chat opened the browser's

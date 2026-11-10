@@ -27,13 +27,14 @@ lessons. Low-confidence answers must explain that the available rules were insuf
 
 ## Visual and interaction rules
 
-- Use the "Daylight café" palette in `demo.css`: warm cream background, espresso header,
-  terracotta primary actions, honey accents and teal for success states.
-- The home page is the one exception: it uses the darker "café at night" look in `home.css`
-  (animated café scene, 3D shelf of game boxes, scroll track, ask-the-host chat) with
-  self-hosted fonts in `static/fonts`. Session, review and admin pages stay on `demo.css` so
-  lessons and setup steps remain easy to read at the table.
-- Home page motion must respect `prefers-reduced-motion`, canvas loops run only while on
+- Every page uses the "café at night" look: deep plum background, cream text, brass primary
+  actions, rose accents and green for success states, with self-hosted fonts in `static/fonts`
+  (Big Shoulders Display for headings, Instrument Sans for text, JetBrains Mono for labels).
+- The home page (`home.css`) carries the showpiece motion: animated café scene, 3D shelf of game
+  boxes, scroll track and ask-the-host chat. Session, review, error and admin pages (`demo.css`)
+  share the palette and type but stay calm, because lessons and setup steps are read at the
+  table: large text, high contrast, and only small entrance and progress animations.
+- All motion must respect `prefers-reduced-motion`. On the home page, canvas loops run only while on
   screen, and the page must keep working without JavaScript (plain game list and start form).
 - The home page chat asks about the game pulled from the shelf and sends nothing until the
   visitor asks, because each question is a paid request.
