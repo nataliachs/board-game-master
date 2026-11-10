@@ -36,6 +36,22 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Separate model for rewriting and evidence review — 2026-11-10
+
+Live timing logs showed answers slowing from 2–6 s (gpt-4.1-mini, revisions 29–30) to 9–29 s once
+production used `gpt-5.6-luna` at `medium` effort with evidence review (revision 32 onwards). A
+session question now makes up to four model calls in sequence: rewrite 1.7–3.6 s, relevance review
+1.4–8.3 s, answer 3–10.5 s and support review 2.4–6.3 s; search stayed under a second. The 29 s case
+was the first question after a deploy.
+
+Added optional `LLM_CHECK_MODEL` and `LLM_CHECK_REASONING_EFFORT` (`LlmCheckProperties`): when set,
+query rewriting and both evidence-review calls use that model through a second OpenAI client, while
+answers and game drafting keep `LLM_MODEL`. Blank keeps the previous single-model behaviour; an
+invalid model/effort pair stops startup. `LlmCheckModelTest` covers blank and set models, shared
+provider/key/timeout/limit, non-OpenAI clients and configuration binding. Validation: 446 unit and
+110 integration tests passed. Not deployed; the intended production value is `gpt-4.1-mini`, and
+whether it still rejects the wrong Attack/Nope answer is unverified until retested.
+
 ## Withheld answers are logged; session questions also searched alone — 2026-11-10
 
 Production settings (user-approved, not code): `gpt-5.6-luna` since revision 00031; revision
