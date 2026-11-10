@@ -41,4 +41,29 @@ final class QuoteMismatchDiagnostics {
             LOG.warn("Rule quote mismatch detail unavailable: chunkId={}", match.chunkId());
         }
     }
+
+    /**
+     * The drafted answer that was not shown, so a caught mistake can be told apart from a false
+     * rejection: the model's own "insufficient evidence" verdict or a failed cited-answer support review.
+     */
+    static void logRejectedAnswer(String reason, java.util.UUID gameVersionId, String question, LlmResponse answer) {
+        if (!LOG.isDebugEnabled() || answer == null) { return; }
+        var detail = new LinkedHashMap<String, Object>();
+        detail.put("reason", reason);
+        detail.put("gameVersionId", gameVersionId);
+        detail.put("question", question);
+        detail.put("proposedAnswer", answer.answer());
+        detail.put("sufficientEvidence", answer.sufficientEvidence());
+        detail.put("citations", answer.citations().stream().map(c -> {
+            var cited = new LinkedHashMap<String, Object>();
+            cited.put("chunkId", c.chunkId());
+            cited.put("quote", c.quote());
+            return cited;
+        }).toList());
+        try {
+            LOG.debug("Rule answer rejection detail: {}", JSON.writeValueAsString(detail));
+        } catch (JsonProcessingException ignored) {
+            LOG.warn("Rule answer rejection detail unavailable: reason={}", reason);
+        }
+    }
 }

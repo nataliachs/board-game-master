@@ -58,7 +58,7 @@ class RuleRetrievalServiceTest {
         verify(rewriteClient, times(1)).rewrite(any());
         verify(client).embed("standalone");
     }
-    @Test void contextualFollowUpReachesEmbeddingProviderOnceWithPriorTopicWithinSmallInputLimit() {
+    @Test void contextualFollowUpIsSearchedWithPriorTopicWithinSmallInputLimitAndOnItsOwn() {
         var context = new AnswerConversation(UUID.randomUUID(), "Original game", "Edition", "en", 3, "STANDARD", "SETUP",
                 "Prepare missions", "Long lesson explanation. ".repeat(40),
                 List.of(new AnswerConversation.Turn("USER", "Can I keep all four mission cards?"),
@@ -66,11 +66,12 @@ class RuleRetrievalServiceTest {
                 new AnswerConversation.SetupContext("MISSIONS", "Choose mission cards", "Long dealing procedure. ".repeat(40)));
         String question = "What's the risk?";
         var vector = new Embedding(List.of(1f, 0f, 0f));
+        var queries = new java.util.ArrayList<String>();
         when(client.profile()).thenReturn(profile);
         when(client.embed(anyString())).thenAnswer(invocation -> {
             String query = invocation.getArgument(0);
-            assertThat(query).startsWith(question).contains("Can I keep all four mission cards?")
-                    .doesNotContain("Invented answer").hasSizeLessThanOrEqualTo(100);
+            queries.add(query);
+            assertThat(query).startsWith(question).doesNotContain("Invented answer").hasSizeLessThanOrEqualTo(100);
             return vector;
         });
         when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
@@ -79,8 +80,45 @@ class RuleRetrievalServiceTest {
                 .searchContextual(version, question, context);
         assertThat(result.gameVersionId()).isEqualTo(version);
         assertThat(result.matches()).isEmpty();
+        assertThat(queries).hasSize(2);
+        assertThat(queries.get(0)).contains("Can I keep all four mission cards?");
+        assertThat(queries.get(1)).isEqualTo(question);
+        verify(store, times(2)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
+    }
+
+    @Test void sessionQuestionKeepsEachPassagesBetterScoreSoContextCannotBuryAClearQuestion() {
+        // Exploding Kittens, live: the lesson text attached to "A attacks, B attacks, C Nopes" ranked
+        // "Overview" level with "Nope" and left "Attack" under the threshold.
+        var context = new AnswerConversation(UUID.randomUUID(), "Exploding Kittens", "Original", "en", 4, "STANDARD", "TEACHING",
+                "Welcome to Exploding Kittens", "Exploding Kittens is a card game about avoiding exploding kittens.", List.of());
+        String question = "What happens when A plays an Attack, B plays an Attack and C plays a Nope?";
+        var padded = new Embedding(List.of(1f, 0f, 0f));
+        var alone = new Embedding(List.of(0f, 1f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(client.embed(anyString())).thenAnswer(invocation -> question.equals(invocation.getArgument(0)) ? alone : padded);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        var overviewPadded = scored("Overview of the game", .64);
+        var attackPadded = scored("Attack", .48);
+        var attackAlone = new RuleVectorStore.Match(attackPadded.chunkId(), document, version, "Attack text.", "Rules reference",
+                com.boardgamemaster.rules.domain.RuleSourceType.RULEBOOK, "1", "en", "Original fixture", "Attack", null, 0, 0, 10, .66);
+        var nope = scored("Nope", .71);
+        when(store.search(eq(version), eq(profile), eq(padded), anyInt(), any())).thenReturn(List.of(overviewPadded, attackPadded));
+        when(store.search(eq(version), eq(profile), eq(alone), anyInt(), any())).thenReturn(List.of(nope, attackAlone, scored("Setup", .3)));
+
+        var result = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5))
+                .searchContextual(version, question, context);
+        assertThat(result.matches()).extracting(RuleVectorStore.Match::sectionTitle).containsExactly("Nope", "Attack", "Overview of the game");
+        assertThat(result.matches().get(1).cosineSimilarity()).as("each passage keeps its better real score").isEqualTo(.66);
+    }
+
+    @Test void plainSearchIsSearchedOnce() {
+        var vector = new Embedding(List.of(1f, 0f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(client.embed(anyString())).thenReturn(vector);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(store.search(eq(version), eq(profile), eq(vector), anyInt(), any())).thenReturn(List.of(scored("Setup", .7)));
+        new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5)).search(version, "How do I set up?", null);
         verify(client, times(1)).embed(anyString());
-        verify(store, times(1)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
     }
     private RuleVectorStore.Match scored(String section, double score) {
         return new RuleVectorStore.Match(UUID.randomUUID(), document, version, section + " text.", "Rules reference",

@@ -105,8 +105,15 @@ public class RuleAnswerService {
                 LOG.info("Rule answer correction completed: gameId={}, gameVersionId={}, outcome={}",
                         gameId, versionId, rejection == null ? "ACCEPTED" : rejection.reason());
             }
-            if (rejection != null) { return fallback(gameId, versionId, rejection.reason(), rejection.chunkId()); }
+            if (rejection != null) {
+                if (rejection.reason() == FallbackReason.MODEL_INSUFFICIENT_EVIDENCE) {
+                    QuoteMismatchDiagnostics.logRejectedAnswer(rejection.reason().name(), versionId, question.strip(), generated);
+                }
+                return fallback(gameId, versionId, rejection.reason(), rejection.chunkId());
+            }
             if (reviewed && !review.supports(prompt, generated)) {
+                QuoteMismatchDiagnostics.logRejectedAnswer(FallbackReason.ANSWER_SUPPORT_REJECTED.name(), versionId,
+                        question.strip(), generated);
                 return fallback(gameId, versionId, FallbackReason.ANSWER_SUPPORT_REJECTED, null);
             }
             var sources = new ArrayList<RuleAnswer.Source>();

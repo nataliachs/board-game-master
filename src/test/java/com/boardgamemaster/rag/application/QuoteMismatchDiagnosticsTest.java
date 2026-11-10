@@ -30,6 +30,24 @@ class QuoteMismatchDiagnosticsTest {
         return new RuleVectorStore.Match(UUID.randomUUID(), UUID.randomUUID(), version, content, "Original rules",
                 RuleSourceType.RULEBOOK, "1", "en", "Original test fixture", "Cards", 1, 0, 0, content.length(), .7);
     }
+    @Test void rejectedAnswersAreLoggedOnlyWhenOptedIn() throws Exception {
+        var cited = source("Treat the card that was Noped as if it had never been played.");
+        var answer = new LlmResponse("Person C takes 2 turns.", true, List.of(new LlmResponse.Citation(cited.chunkId(), "as if it had never been played")));
+        logger.setLevel(Level.OFF);
+        QuoteMismatchDiagnostics.logRejectedAnswer("ANSWER_SUPPORT_REJECTED", version, "Who takes the turns?", answer);
+        assertThat(events.list).isEmpty();
+
+        logger.setLevel(Level.DEBUG);
+        QuoteMismatchDiagnostics.logRejectedAnswer("ANSWER_SUPPORT_REJECTED", version, "Who takes the turns?", answer);
+        String message = events.list.getFirst().getFormattedMessage();
+        assertThat(message).startsWith("Rule answer rejection detail: ");
+        var json = new ObjectMapper().readTree(message.substring("Rule answer rejection detail: ".length()));
+        assertThat(json.path("reason").asText()).isEqualTo("ANSWER_SUPPORT_REJECTED");
+        assertThat(json.path("question").asText()).isEqualTo("Who takes the turns?");
+        assertThat(json.path("proposedAnswer").asText()).isEqualTo("Person C takes 2 turns.");
+        assertThat(json.path("citations").get(0).path("quote").asText()).isEqualTo("as if it had never been played");
+        assertThat(json.path("citations").get(0).path("chunkId").asText()).isEqualTo(cited.chunkId().toString());
+    }
     @Test void disabledDiagnosticsEmitNoSourceContent() {
         logger.setLevel(Level.OFF);
         var source = source("Private fixture rule");

@@ -118,6 +118,16 @@ public class RuleRetrievalService {
         var vector = embeddings.embed(query.strip());
         var candidates = store.search(versionId, profile, vector, config.candidateLimit(), filters);
         RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
+        // A session question is searched with the previous question and lesson/setup text attached. That helps a
+        // vague follow-up but dilutes a clear question (a lesson welcome text put "Overview" level with "Nope").
+        // Unless a rewrite already made it standalone, also search the question alone and keep each passage's
+        // higher score; this costs one embedding, no model call.
+        if (conversation != null && resolved == null && originalQuestion != null && !originalQuestion.isBlank()
+                && !originalQuestion.strip().equals(query.strip())) {
+            var alone = store.search(versionId, profile, embeddings.embed(originalQuestion.strip()), config.candidateLimit(), filters);
+            RetrievalQueryDiagnostics.log(versionId, originalQuestion.strip(), alone, minimum);
+            candidates = higherScores(candidates, alone);
+        }
         var eligible = eligible(candidates, minimum);
         // A short or casual question ("How do I win?") can rank the right passages first yet score below the
         // threshold. Answer searches retry once with the question in rulebook wording; the threshold is unchanged.
@@ -144,6 +154,21 @@ public class RuleRetrievalService {
         var found = result(versionId, profile, limit, filters, minimum, ranked.stream().limit(limit).toList(),
                 candidates.size(), candidates.size() - eligible.size(), eligible.size() - unique.size(), started);
         return new SearchResult(found.gameVersionId(), found.profile(), found.topK(), found.matches(), found.diagnostics(), resolved);
+    }
+    /** Each passage once, with the better of its two scores, best first; scores are never raised beyond either search. */
+    static List<RuleVectorStore.Match> higherScores(List<RuleVectorStore.Match> first, List<RuleVectorStore.Match> second) {
+        var best = new LinkedHashMap<UUID, RuleVectorStore.Match>();
+        for (var match : first) { best.merge(match.chunkId(), match, RuleRetrievalService::better); }
+        for (var match : second) { best.merge(match.chunkId(), match, RuleRetrievalService::better); }
+        var merged = new ArrayList<>(best.values());
+        merged.sort((a, b) -> Double.compare(score(b), score(a)));
+        return List.copyOf(merged);
+    }
+    private static RuleVectorStore.Match better(RuleVectorStore.Match a, RuleVectorStore.Match b) {
+        return score(b) > score(a) ? b : a;
+    }
+    private static double score(RuleVectorStore.Match match) {
+        return Double.isFinite(match.cosineSimilarity()) ? match.cosineSimilarity() : -2;
     }
     private static List<RuleVectorStore.Match> eligible(List<RuleVectorStore.Match> candidates, double minimum) {
         return candidates.stream().filter(m -> Double.isFinite(m.cosineSimilarity()) && m.cosineSimilarity() >= minimum).toList();
