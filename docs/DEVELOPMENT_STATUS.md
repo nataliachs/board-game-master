@@ -36,6 +36,31 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## PDF import detects sections — 2026-11-10
+
+`PdfRuleExtractor` now performs the spec's "section detection if possible" step for PDF rulebooks
+(both "Import a game from a rulebook PDF" and PDF "Add rules" uploads). Lines at least 1.2× the
+body font size, or short fully bold lines at body size, become `## ` headings when a line starting
+a sentence sits just below them in the same column; the heading is placed before that line even
+when the PDF stores it elsewhere in its text order (Dixit stores titles after their paragraphs).
+Rotated fragments of three characters or fewer, lone letters/digits and bare page numbers are
+dropped; all other text is kept as extracted, so quote validation is unaffected. Existing
+documents are unchanged until re-uploaded.
+
+Checked locally (not committed) on six rulebook PDFs the user owns: Azul now splits into "Game
+Setup", "Object of the game", "A. Factory offer", "Floor line", "B. Wall-tiling", "Scoring", "End of
+the game" and "Variant play"; Exploding Kittens loses its rotated cover fragments and its card rules
+sit under the card names ("DEFUSE 6 cards", "ATTACK (2x) 4 cards", …); Dixit, Ticket to Ride,
+Carcassonne and Catan get their section titles. Some sections still get a decorative or
+neighbouring label as title (Exploding Kittens "combos" over the Nope timing text, Azul "First turns
+example" over the pattern-line rules) and example captions stay inside their sections.
+`PdfRuleExtractorTest` covers size and bold headings, a heading stored after its text, labels and
+continued sentences staying plain, noise removal and single-font PDFs. Validation: 444 unit and
+110 integration tests passed. Not yet tested by importing a PDF on the live app.
+
+Correction to the entry below: the Exploding Kittens reference put the leftover-Defuse note after
+dealing; the rules sheet places it under step 2, before the deal (fixed on `fix/ek-defuse-order`).
+
 ## Plain-language references for Azul and Exploding Kittens — 2026-11-10
 
 Live retest after PR #27 (revision `board-game-master-00029-lct`): the empty-search retry ran for
@@ -54,8 +79,8 @@ uploaded text and flagged for the user to check: Azul floor-line values (-1, -1,
 Exploding Kittens edition, player count and card total read from fragmented cover text. To use
 them, upload each file in /admin and remove the PDF document. Not yet uploaded or retested live.
 
-Known limitation: PDF import keeps no headings and splits by length rather than topic, so other
-PDF rulebooks may show the same weak retrieval until the import is improved.
+Known limitation (addressed by the section detection entry above): PDF import kept no headings and
+split by length rather than topic.
 
 ## Short questions found no rules — 2026-11-10
 

@@ -61,6 +61,85 @@ class PdfRuleExtractorTest {
         assertThatThrownBy(() -> extractor.extract("rules.pdf", new byte[0])).isInstanceOf(RuleImportException.class);
     }
 
+    private static String markdown(byte[] pdf) {
+        String text = new String(new PdfRuleExtractor().extract("rules.pdf", pdf).markdown(), StandardCharsets.UTF_8);
+        assertThat(text).as("position tags never reach the stored text").doesNotContain("", "");
+        return text;
+    }
+    private static List<TextRuleProcessor.Chunk> chunks(byte[] pdf) {
+        var result = new PdfRuleExtractor().extract("rules.pdf", pdf);
+        return new TextRuleProcessor(new RuleIngestionProperties(1200, 200, 1_048_576, 10_000))
+                .process(result.fileName(), result.markdown()).chunks();
+    }
+
+    @Test
+    void largerTitlesBecomeHeadingsSoPassagesAreSplitAndTitledByTopic() {
+        // Azul-like layout: 20 pt titles over 11 pt rules.
+        byte[] pdf = TestPdfs.placed(List.of(List.of(
+                TestPdfs.Placed.heading("Game Setup", 60, 20), TestPdfs.Placed.body("Give each player a player board.", 84),
+                TestPdfs.Placed.body(FILLER, 98), TestPdfs.Placed.body(FILLER, 112),
+                TestPdfs.Placed.heading("End of the game", 160, 20), TestPdfs.Placed.body("The game ends after a full row.", 184),
+                TestPdfs.Placed.body(FILLER, 198), TestPdfs.Placed.body(FILLER, 212))));
+        assertThat(markdown(pdf)).contains("## Game Setup\nGive each player", "## End of the game\nThe game ends");
+        assertThat(chunks(pdf)).extracting(TextRuleProcessor.Chunk::sectionTitle).containsExactly("Game Setup", "End of the game");
+        assertThat(chunks(pdf).get(1).content()).contains("The game ends after a full row.").doesNotContain("player board");
+    }
+
+    @Test
+    void shortBoldLinesAtBodySizeAreRunInHeadingsButBoldSentencesAreNot() {
+        byte[] pdf = TestPdfs.placed(List.of(List.of(
+                TestPdfs.Placed.bold("Floor line", 60), TestPdfs.Placed.body("Excess tiles go to the floor line.", 74),
+                TestPdfs.Placed.bold("Place the tiles one by one.", 100), TestPdfs.Placed.body(FILLER, 114),
+                TestPdfs.Placed.body(FILLER, 128), TestPdfs.Placed.body(FILLER, 142))));
+        String text = markdown(pdf);
+        assertThat(text).contains("## Floor line\nExcess tiles").contains("\nPlace the tiles one by one.")
+                .doesNotContain("## Place the tiles");
+    }
+
+    @Test
+    void headingStoredAfterItsTextIsPlacedAboveTheLineDirectlyBelowIt() {
+        // Dixit-like: the PDF stores the title after the paragraph it heads.
+        byte[] pdf = TestPdfs.placed(List.of(List.of(
+                TestPdfs.Placed.body("Introductory text for the whole game.", 40), TestPdfs.Placed.body(FILLER, 54),
+                TestPdfs.Placed.body("The storyteller looks at their cards.", 120), TestPdfs.Placed.body(FILLER, 134),
+                TestPdfs.Placed.body(FILLER, 148), TestPdfs.Placed.heading("Create the riddle", 104, 14))));
+        String text = markdown(pdf);
+        assertThat(text).contains("## Create the riddle\nThe storyteller looks at their cards.");
+        assertThat(text.indexOf("Introductory text")).isLessThan(text.indexOf("## Create the riddle"));
+    }
+
+    @Test
+    void labelsContinuedSentencesAndFarAwayTitlesStayPlainText() {
+        byte[] pdf = TestPdfs.placed(List.of(List.of(
+                // A large first line of a step whose sentence continues on the next line.
+                TestPdfs.Placed.heading("Shuffle the deck", 60, 16), TestPdfs.Placed.body("and put it face down.", 78),
+                // Two diagram labels in a row, then a large title with nothing near it.
+                TestPdfs.Placed.heading("Pattern lines", 200, 16), TestPdfs.Placed.heading("Score track", 220, 16),
+                TestPdfs.Placed.heading("Wall", 400, 16),
+                TestPdfs.Placed.body(FILLER, 600), TestPdfs.Placed.body(FILLER, 614), TestPdfs.Placed.body(FILLER, 628))));
+        assertThat(markdown(pdf)).doesNotContain("## ").contains("Shuffle the deck", "and put it face down.", "Pattern lines", "Wall");
+    }
+
+    @Test
+    void layoutNoiseIsDroppedButRuleTextIsKept() {
+        // A rotated cover title comes out of text-order extraction as two- or three-letter pieces
+        // (Exploding Kittens: "EX", "PL", "OD"…); rotated text the PDF stores as whole lines is kept.
+        byte[] pdf = TestPdfs.placed(List.of(List.of(
+                new TestPdfs.Placed("EXPLODING", 20, 300, 30, true, true),
+                TestPdfs.Placed.body("B", 60), TestPdfs.Placed.body("3", 74), TestPdfs.Placed.body("#1 Draw two cards.", 88),
+                TestPdfs.Placed.body("OR", 102), TestPdfs.Placed.body(FILLER, 116), TestPdfs.Placed.body(FILLER, 130),
+                TestPdfs.Placed.body(FILLER, 144))));
+        String text = markdown(pdf);
+        assertThat(text).doesNotContain("EX", "PL", "OD", "ING").doesNotContainPattern("(?m)^B$").doesNotContainPattern("(?m)^3$")
+                .contains("\nOR\n", "1 Draw two cards.").doesNotContain("#1");
+    }
+
+    @Test
+    void singleFontRulebooksGetNoHeadings() {
+        byte[] pdf = TestPdfs.pdf(List.of(List.of("Setup", "Shuffle the deck and deal six cards.", FILLER, FILLER, FILLER)));
+        assertThat(markdown(pdf)).doesNotContain("## ").contains("Setup\nShuffle the deck");
+    }
+
     @Test
     void cleaningRemovesStructureTheChunkerWouldMisread() {
         String cleaned = PdfRuleExtractor.clean("Intro\u0007 text\r\n<!-- page: 9 -->\n```code\n\n\n\nEnd   ");

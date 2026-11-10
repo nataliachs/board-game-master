@@ -496,7 +496,15 @@ document in one transaction); games can only be hidden.
 
 **PDF import.** `GameImportService` runs in three stages. `PdfRuleExtractor` (Apache PDFBox)
 extracts text in the PDF's own reading order, so multi-column pages stay intact, and inserts a
-`<!-- page: N -->` marker per page for citations. `GameDraftClient` makes one structured-output
+`<!-- page: N -->` marker per page for citations. It also detects sections: a line at least 1.2
+times the body font size (the most common upright size), or a short fully bold line at body size,
+becomes a `## ` heading when an upright line starting a sentence sits just below it in the same
+column. Because PDF text order can store a heading away from its section, the heading is placed
+before the nearest such line on the page; candidates with no line below them, runs of labels and
+lines whose sentence continues stay plain text. Layout noise is dropped: rotated pieces of three
+characters or fewer (vertical titles split into fragments), lone letters or digits, and bare page
+numbers. All other text is kept as extracted, so quotes still match. The same extraction serves
+"Add rules" uploads of a PDF. `GameDraftClient` makes one structured-output
 call (strict JSON schema `game_teaching_draft`, its own token budget and timeout) for catalog
 details, setup steps and lessons; the prompt treats the rulebook as data. The draft is then fitted
 to the app's rules and saved in one transaction as a hidden game, together with the rulebook as a

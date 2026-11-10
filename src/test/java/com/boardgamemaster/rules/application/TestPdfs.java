@@ -36,6 +36,42 @@ public final class TestPdfs {
         }
     }
 
+    /** One line of text placed on a page: {@code top} is measured from the top edge, in points. */
+    public record Placed(String text, float x, float top, float size, boolean bold, boolean rotated) {
+        public static Placed body(String text, float top) { return new Placed(text, 50, top, 11, false, false); }
+        public static Placed heading(String text, float top, float size) { return new Placed(text, 50, top, size, false, false); }
+        public static Placed bold(String text, float top) { return new Placed(text, 50, top, 11, true, false); }
+    }
+
+    /** One page per inner list; lines are written in list order, so a heading can be stored after its text. */
+    public static byte[] placed(List<List<Placed>> pages) {
+        try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+            var bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+            for (var lines : pages) {
+                var page = new PDPage();
+                document.addPage(page);
+                float height = page.getMediaBox().getHeight();
+                try (var content = new PDPageContentStream(document, page)) {
+                    for (var line : lines) {
+                        content.beginText();
+                        content.setFont(line.bold() ? bold : regular, line.size());
+                        float y = height - line.top();
+                        content.setTextMatrix(line.rotated()
+                                ? org.apache.pdfbox.util.Matrix.getRotateInstance(Math.toRadians(90), line.x(), y)
+                                : org.apache.pdfbox.util.Matrix.getTranslateInstance(line.x(), y));
+                        content.showText(line.text());
+                        content.endText();
+                    }
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public static byte[] pdf(List<List<String>> pages) {
         try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
             var font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
