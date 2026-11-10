@@ -24,6 +24,23 @@ class AdminAccessFilterTest {
     }
 
     @Test
+    void ruleQuestionsStayOpenForTheHomePageChatButNothingElseUnderGames() throws Exception {
+        assertThat(AdminAccessFilter.isProtected("POST", "/api/v1/games/abc/questions")).isFalse();
+        assertThat(PaidRequestLimitFilter.isPaid("POST", "/api/v1/games/abc/questions")).as("still rate limited").isTrue();
+        for (String path : new String[] {"/api/v1/games/abc/versions", "/api/v1/games/abc/questions/x", "/api/v1/games/questions",
+                "/api/v1/games/abc/x/questions", "/api/v1/game-versions/abc/questions"}) {
+            assertThat(AdminAccessFilter.isProtected("POST", path)).as(path).isTrue();
+        }
+        for (String method : new String[] {"PUT", "PATCH", "DELETE"}) {
+            assertThat(AdminAccessFilter.isProtected(method, "/api/v1/games/abc/questions")).as(method).isTrue();
+        }
+        var filter = new AdminAccessFilter(true, "admin", "s3cret");
+        assertThat(run(filter, "POST", "/api/v1/games/abc/questions", null).getStatus()).isEqualTo(200);
+        assertThat(run(filter, "POST", "/api/v1/games/abc/questions;x", null).getStatus()).isEqualTo(200);
+        assertThat(run(filter, "POST", "/api/v1/games/abc/versions", null).getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void staysOpenLocallyWithoutAPassword() throws Exception {
         assertThat(run(new AdminAccessFilter(false, "admin", ""), null).getStatus()).isEqualTo(200);
     }

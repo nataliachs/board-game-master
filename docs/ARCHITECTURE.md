@@ -501,6 +501,8 @@ punctuation differences only and always returns the original source span.
 
 **Security filters.** `AdminAccessFilter` puts HTTP Basic auth on `/admin` and content-changing
 catalog and rule APIs, and refuses them in `prod` when no password is configured.
+Rule questions (`POST /api/v1/games/{gameId}/questions`) are the exception: they change nothing and
+the home page chat sends them for any visitor, so they stay open and rely on the paid-request caps.
 `PaidRequestLimitFilter` caps question, voice and narration requests per client per hour and per
 application per day, in memory. Both match on the path Spring MVC routes on (decoded, without
 `;parameters`), not the raw request URI. `ApiErrorController` and `BrowserNotFoundHandler` give
