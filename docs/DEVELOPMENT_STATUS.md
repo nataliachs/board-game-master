@@ -36,6 +36,48 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Home page redesign from the motion prototype — 2026-11-10
+
+Scope: presentation only; no milestone, backend, database or CSP change. Not committed or
+deployed at the time of writing.
+
+`docs/motion-prototype.html` was ported onto the real home page: `home.html`, new `home.css`,
+`home.js` and `home-boot.js`; `library.js` was removed. Only the home page changes look; session,
+review and admin pages keep `demo.css` (recorded as an exception in `UI_GUIDE.md`).
+
+- Hero: canvas café scene that follows the visitor's local time, with time-of-day buttons,
+  floating pieces, pointer and scroll parallax and a letter-by-letter title.
+- Shelf: 3D boxes built in the browser from the server-rendered game list, so the games still
+  come from the database and the page works without JavaScript. The front face shows the game's
+  cover image over a drawn cover (initials and name), which stays when there is no cover or it
+  fails to load. Box colours and sizes are derived from the game name because the catalog stores
+  neither. Filters use the real player counts and duration. The panel under the shelf is the
+  existing start form (players, teaching style, read aloud) posting to `/ui/sessions`.
+- Track: scroll-driven meeple over the real flow (pick, learn, set up, play and ask). The
+  prototype's score-counting step was dropped because the product has no such feature.
+- Ask the host: questions go to the existing `POST /api/v1/games/{gameId}/questions` for the
+  game pulled from the shelf; switching games starts a new conversation. Nothing is sent until
+  the visitor asks. Answers show the evidence level and source quotes. The prototype's sample
+  conversations were removed.
+- Because the page CSP allows only same-origin scripts, styles and fonts, there are no inline
+  styles or scripts and the three fonts (SIL OFL 1.1) are self-hosted in `static/fonts`.
+- Fixed while porting: the prototype blended time-of-day colours incorrectly after the first
+  switch, and a pulled-out box hid its neighbours on a short shelf.
+
+Validation: `gradlew test` passed 431 unit tests, including the new `HomeTemplateTest`, which
+renders `home.html` without a database, and `gradlew integrationTest` passed all 110
+PostgreSQL/pgvector integration tests (541 in total, mock providers).
+
+Browser checks: the page was first reviewed at desktop and phone width (no horizontal scroll)
+against a local stand-in server serving the rendered template, the real static files, the
+application's CSP header, five test games and a mocked question endpoint. It was then opened in
+the running application (`bootRun`, local database, all AI providers disabled): the shelf showed
+the one local game with its drawn cover, there were no console or CSP errors, a chat question
+reached the real endpoint and showed the "host can't answer right now" message, and Start game
+opened the first lesson. Not verified: a real AI answer in the home page chat (no paid call was
+made), real cover images inside the running application (the local game has none; they were
+seen only on the stand-in), reduced-motion behaviour and the no-JavaScript fallback.
+
 ## Live retest after all answer fixes — 2026-11-09
 
 Deployed revision `board-game-master-00019-2js` (PR #20 on top of #17–#19, with `RAG_TOP_K=8`).
