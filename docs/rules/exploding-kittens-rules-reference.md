@@ -36,17 +36,17 @@ The game has 56 cards:
 ## Setup
 
 1. Take the 4 Exploding Kittens out of the deck and set them aside.
-2. Take the 6 Defuse cards out of the deck and deal 1 Defuse to each player.
-3. Shuffle the rest of the deck and deal 7 cards face down to each player. Each player now has
-   8 cards: 7 cards plus 1 Defuse. Look at your cards but keep them secret.
-4. Shuffle 2 of the leftover Defuse cards back into the deck and remove any other leftover
-   Defuses from the game. With 5 players there is only 1 leftover Defuse, so shuffle just that
-   one back in.
-5. Put Exploding Kittens back into the deck: 1 fewer than the number of players (for example, 3
+2. Take the 6 Defuse cards out of the deck and deal 1 Defuse to each player. Depending on the
+   number of players, some Defuses are left over: shuffle 2 of them back into the deck and
+   remove the rest from the game. With 5 players there is only 1 leftover Defuse, so shuffle
+   just that one back in. This happens now, before the cards are dealt in the next step.
+3. Shuffle the deck and deal 7 cards face down to each player. Each player now has 8 cards:
+   7 cards plus 1 Defuse. Look at your cards but keep them secret.
+4. Put Exploding Kittens back into the deck: 1 fewer than the number of players (for example, 3
    with 4 players, 2 with 3 players). Remove the extra Exploding Kittens from the game.
-6. Shuffle the deck and place it face down in the middle of the table as the draw pile. Leave
+5. Shuffle the deck and place it face down in the middle of the table as the draw pile. Leave
    space next to it for a discard pile.
-7. Choose who goes first.
+6. Choose who goes first.
 
 ## Faster variant for 2 or 3 players
 
