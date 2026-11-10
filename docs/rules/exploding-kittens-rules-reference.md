@@ -111,6 +111,17 @@ You can play a Nope at any time before an action has started, even when it is no
 can play a Nope on a Special Combo. You can also play a Nope on another Nope to cancel it, which
 lets the original action happen ("Yup"), and so on.
 
+## Example turn: an Attack that is Noped
+
+This follows the example turn in the rules. You think the top card of the draw pile is an Exploding
+Kitten, so instead of passing and drawing, you play See the Future and secretly look at the top 3
+cards. You were right: the top card is an Exploding Kitten. You play an Attack to end your turn and
+make the next player take 2 turns. Another player then plays a Nope on your Attack. The Attack is
+cancelled, so it is still your turn: your Attack does not end your turn and the next player does
+not take 2 turns. You still do not want to draw that Exploding Kitten, so you play a Shuffle to
+shuffle the draw pile. Then you draw the top card to end your turn and hope it is not an Exploding
+Kitten.
+
 ## Shuffle
 
 Shuffle the draw pile at random so that no one knows the order of the cards.
