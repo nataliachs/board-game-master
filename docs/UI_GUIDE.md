@@ -29,6 +29,14 @@ lessons. Low-confidence answers must explain that the available rules were insuf
 
 - Use the "Daylight café" palette in `demo.css`: warm cream background, espresso header,
   terracotta primary actions, honey accents and teal for success states.
+- The home page is the one exception: it uses the darker "café at night" look in `home.css`
+  (animated café scene, 3D shelf of game boxes, scroll track, ask-the-host chat) with
+  self-hosted fonts in `static/fonts`. Session, review and admin pages stay on `demo.css` so
+  lessons and setup steps remain easy to read at the table.
+- Home page motion must respect `prefers-reduced-motion`, canvas loops run only while on
+  screen, and the page must keep working without JavaScript (plain game list and start form).
+- The home page chat asks about the game pulled from the shelf and sends nothing until the
+  visitor asks, because each question is a paid request.
 - Give each screen one prominent next action. Put secondary actions nearby but visually quieter.
 - Show stage and step progress in text as well as visually. Do not rely on color alone.
 - Keep lessons and instructions readable at a table on a phone: comfortable line length,
