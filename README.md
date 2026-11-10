@@ -10,7 +10,7 @@ reading the manual first.
 Built with Java 21 and Spring Boot on PostgreSQL + pgvector, with retrieval-augmented generation
 (RAG) for rule answers, deployed on Google Cloud Run.
 
-![A Ticket to Ride lesson: the learning path on the left, the current lesson in the middle, and the Game Master panel for questions on the right.](docs/images/lesson.jpg)
+![The home page: an animated cafe scene that follows the time of day, with the Board Game Master title and buttons to browse the shelf.](docs/images/home.jpg)
 
 [What it does](#what-it-does) · [Engineering highlights](#engineering-highlights) ·
 [Architecture](#architecture) · [Run it locally](#run-it-locally) · [Tests](#tests) ·
@@ -18,6 +18,8 @@ Built with Java 21 and Spring Boot on PostgreSQL + pgvector, with retrieval-augm
 
 ## What it does
 
+- **Starts at the shelf.** The home page is a café scene with a shelf of game boxes: pull one out,
+  filter by group size or time, and ask the host a rule question about it straight away.
 - **Teaches first.** Pick a game, the number of players and a teaching style (Quick, Standard or
   Detailed), then learn it in short lessons with a visible learning path.
 - **Guides the real table.** At the right moment, the lessons hand over to step-by-step setup
@@ -33,9 +35,11 @@ Built with Java 21 and Spring Boot on PostgreSQL + pgvector, with retrieval-augm
 - **Runs as a real service.** A password-protected admin area for managing games, caps on paid AI
   requests, and a container deployment on Cloud Run with Cloud SQL and Secret Manager.
 
-| Game library | Guided setup | Import from a PDF |
-| --- | --- | --- |
-| ![Game library with search, category filters and a side panel to start a game.](docs/images/library.jpg) | ![Setup step 4 of 7 with a highlighted warning, while the learning path shows the saved lesson.](docs/images/setup.jpg) | ![Admin page for importing a game from a rulebook PDF.](docs/images/admin-import.jpg) |
+| Game shelf | Lesson |
+| --- | --- |
+| ![A shelf of 3D game boxes with real covers, filter chips and a panel to start a game.](docs/images/library.jpg) | ![A Ticket to Ride lesson: the learning path on the left, the current lesson in the middle, and the Game Master panel for questions on the right.](docs/images/lesson.jpg) |
+| **Guided setup** | **Import from a PDF** |
+| ![Setup step 4 of 7 with a highlighted warning, while the learning path shows the saved lesson.](docs/images/setup.jpg) | ![Admin page for importing a game from a rulebook PDF.](docs/images/admin-import.jpg) |
 
 Ticket to Ride is the built-in reference game, with original lessons and setup steps written
 for this project. Lessons and setup work without any AI provider; cited answers, PDF import and
