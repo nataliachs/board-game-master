@@ -277,7 +277,9 @@
     front.appendChild(cover); spine.appendChild(make("span", "sp", g.name));
     box.append(front, make("div", "face f-back"), spine, make("div", "face f-r"), make("div", "face f-t"));
     b.append(make("div", "shadow"), box);
-    b.addEventListener("click", () => pick(i, true));
+    // Clicking the pulled-out box again slides it back. The game stays chosen for the form and
+    // the chat (the start form always needs one), and another click pulls it out again.
+    b.addEventListener("click", () => { if (i === current) b.classList.toggle("out"); else pick(i, true); });
     b.addEventListener("keydown", e => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const step = e.key === "ArrowLeft" ? -1 : 1;
