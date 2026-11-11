@@ -80,15 +80,40 @@ class RuleRetrievalServiceTest {
                 .searchContextual(version, question, context);
         assertThat(result.gameVersionId()).isEqualTo(version);
         assertThat(result.matches()).isEmpty();
-        assertThat(queries).hasSize(2);
-        assertThat(queries.get(0)).contains("Can I keep all four mission cards?");
-        assertThat(queries.get(1)).isEqualTo(question);
+        assertThat(queries).as("alone first; with nothing found, the prior topic is added").hasSize(2);
+        assertThat(queries.get(0)).isEqualTo(question);
+        assertThat(queries.get(1)).contains("Can I keep all four mission cards?");
         verify(store, times(2)).search(eq(version), eq(profile), eq(vector), anyInt(), any());
     }
 
-    @Test void sessionQuestionKeepsEachPassagesBetterScoreSoContextCannotBuryAClearQuestion() {
-        // Exploding Kittens, live: the lesson text attached to "A attacks, B attacks, C Nopes" ranked
-        // "Overview" level with "Nope" and left "Attack" under the threshold.
+    @Test void clearSessionQuestionIsRankedByItsOwnScoresOnly() {
+        // Exploding Kittens, live: the lesson text attached to "A attacks, B attacks, C Nopes" lifted "Overview"
+        // and nine other general passages above "Attack", which then missed the 12-passage evidence pool.
+        var context = new AnswerConversation(UUID.randomUUID(), "Exploding Kittens", "Original", "en", 4, "STANDARD", "TEACHING",
+                "Welcome to Exploding Kittens", "Exploding Kittens is a card game about avoiding exploding kittens.", List.of());
+        String question = "What happens when A plays an Attack, B plays an Attack and C plays a Nope?";
+        var alone = new Embedding(List.of(0f, 1f, 0f));
+        when(client.profile()).thenReturn(profile);
+        when(client.embed(question)).thenReturn(alone);
+        when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
+        when(store.search(eq(version), eq(profile), eq(alone), anyInt(), any()))
+                .thenReturn(List.of(scored("Nope", .63), scored("Attack", .47), scored("Overview of the game", .23)));
+
+        // The answer pool with evidence review uses a 0.35 floor; "clear" still means the regular 0.5 threshold.
+        var result = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5))
+                .searchForReview(version, question, context, null, null, null, review(.35, 12));
+        assertThat(result.matches()).extracting(RuleVectorStore.Match::sectionTitle).containsExactly("Nope", "Attack");
+        verify(client, times(1)).embed(anyString());
+        verify(store, times(1)).search(eq(version), eq(profile), any(), anyInt(), any());
+    }
+    private static EvidenceReviewService review(double floor, int count) {
+        var review = mock(EvidenceReviewService.class);
+        when(review.candidateFloor()).thenReturn(floor);
+        when(review.candidateCount()).thenReturn(count);
+        return review;
+    }
+
+    @Test void vagueSessionQuestionKeepsEachPassagesBetterScoreAcrossBothSearches() {
         var context = new AnswerConversation(UUID.randomUUID(), "Exploding Kittens", "Original", "en", 4, "STANDARD", "TEACHING",
                 "Welcome to Exploding Kittens", "Exploding Kittens is a card game about avoiding exploding kittens.", List.of());
         String question = "What happens when A plays an Attack, B plays an Attack and C plays a Nope?";
@@ -98,17 +123,18 @@ class RuleRetrievalServiceTest {
         when(client.embed(anyString())).thenAnswer(invocation -> question.equals(invocation.getArgument(0)) ? alone : padded);
         when(store.hasEmbeddings(eq(version), eq(profile), any())).thenReturn(true);
         var overviewPadded = scored("Overview of the game", .64);
-        var attackPadded = scored("Attack", .48);
+        var attackPadded = scored("Attack", .58);
         var attackAlone = new RuleVectorStore.Match(attackPadded.chunkId(), document, version, "Attack text.", "Rules reference",
-                com.boardgamemaster.rules.domain.RuleSourceType.RULEBOOK, "1", "en", "Original fixture", "Attack", null, 0, 0, 10, .66);
-        var nope = scored("Nope", .71);
+                com.boardgamemaster.rules.domain.RuleSourceType.RULEBOOK, "1", "en", "Original fixture", "Attack", null, 0, 0, 10, .44);
+        var nope = scored("Nope", .49);
         when(store.search(eq(version), eq(profile), eq(padded), anyInt(), any())).thenReturn(List.of(overviewPadded, attackPadded));
         when(store.search(eq(version), eq(profile), eq(alone), anyInt(), any())).thenReturn(List.of(nope, attackAlone, scored("Setup", .3)));
 
+        // Alone, nothing reaches the 0.5 threshold, so the lesson and previous question are allowed to help.
         var result = new RuleRetrievalService(documents, store, gateway, new RetrievalProperties(5))
                 .searchContextual(version, question, context);
-        assertThat(result.matches()).extracting(RuleVectorStore.Match::sectionTitle).containsExactly("Nope", "Attack", "Overview of the game");
-        assertThat(result.matches().get(1).cosineSimilarity()).as("each passage keeps its better real score").isEqualTo(.66);
+        assertThat(result.matches()).extracting(RuleVectorStore.Match::sectionTitle).containsExactly("Overview of the game", "Attack");
+        assertThat(result.matches().get(1).cosineSimilarity()).as("each passage keeps its better real score").isEqualTo(.58);
     }
 
     @Test void plainSearchIsSearchedOnce() {

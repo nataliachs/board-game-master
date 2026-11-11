@@ -115,18 +115,27 @@ public class RuleRetrievalService {
             resolved = queryRewriter.rewrite(originalQuestion, conversation, Math.min(4000, embeddings.maxInputCharacters())).orElse(null);
             if (resolved != null) { query = resolved; }
         }
-        var vector = embeddings.embed(query.strip());
-        var candidates = store.search(versionId, profile, vector, config.candidateLimit(), filters);
-        RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
-        // A session question is searched with the previous question and lesson/setup text attached. That helps a
-        // vague follow-up but dilutes a clear question (a lesson welcome text put "Overview" level with "Nope").
-        // Unless a rewrite already made it standalone, also search the question alone and keep each passage's
-        // higher score; this costs one embedding, no model call.
+        List<RuleVectorStore.Match> candidates;
+        // A session question that no rewrite made standalone has the previous question and lesson/setup text
+        // attached. That helps a vague question but buries a clear one: live, a welcome lesson's text lifted
+        // "Overview", "Setup" and eight other general passages above "Attack" for "A attacks, B attacks, C Nopes",
+        // so the Attack rule missed the answer's evidence. The question is therefore searched alone first. When
+        // that finds a passage at the regular threshold, the question is clear and only its own scores count;
+        // otherwise the padded query is searched too and each passage keeps its higher score.
         if (conversation != null && resolved == null && originalQuestion != null && !originalQuestion.isBlank()
                 && !originalQuestion.strip().equals(query.strip())) {
-            var alone = store.search(versionId, profile, embeddings.embed(originalQuestion.strip()), config.candidateLimit(), filters);
-            RetrievalQueryDiagnostics.log(versionId, originalQuestion.strip(), alone, minimum);
-            candidates = higherScores(candidates, alone);
+            candidates = store.search(versionId, profile, embeddings.embed(originalQuestion.strip()), config.candidateLimit(), filters);
+            RetrievalQueryDiagnostics.log(versionId, originalQuestion.strip(), candidates, minimum);
+            if (eligible(candidates, Math.max(minimum, config.similarityThreshold())).isEmpty()) {
+                var padded = store.search(versionId, profile, embeddings.embed(query.strip()), config.candidateLimit(), filters);
+                RetrievalQueryDiagnostics.log(versionId, query.strip(), padded, minimum);
+                candidates = higherScores(padded, candidates);
+            } else {
+                query = originalQuestion;
+            }
+        } else {
+            candidates = store.search(versionId, profile, embeddings.embed(query.strip()), config.candidateLimit(), filters);
+            RetrievalQueryDiagnostics.log(versionId, query.strip(), candidates, minimum);
         }
         var eligible = eligible(candidates, minimum);
         // A short or casual question ("How do I win?") can rank the right passages first yet score below the
