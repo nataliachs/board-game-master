@@ -32,8 +32,9 @@ Built with Java 21 and Spring Boot on PostgreSQL + pgvector, with retrieval-augm
   questions. The game stays hidden until an admin has reviewed it.
 - **Speaks, if you want.** Optional voice questions (speech-to-text) and spoken lessons and
   answers (text-to-speech).
-- **Runs as a real service.** A password-protected admin area for managing games, caps on paid AI
-  requests, and a container deployment on Cloud Run with Cloud SQL and Secret Manager.
+- **Runs as a real service.** An admin area behind a sign-in page for managing games, caps on paid
+  AI requests that the admin can change while the app runs, and a container deployment on Cloud Run
+  with Cloud SQL and Secret Manager.
 
 | Game shelf | Lesson |
 | --- | --- |
@@ -54,12 +55,19 @@ lesson or marks setup done. Each session pins the game version it started with, 
 new content can't change the rules halfway through a game.
 
 **Answers have to prove where they came from.** Questions run through a version-scoped RAG
-pipeline: query embedding, pgvector cosine search filtered to that game's ruleset,
-deduplication and reranking, then a grounded answer under a strict JSON schema. Every quote the
-model cites is matched back to the stored rulebook text, allowing only whitespace,
-typographic-punctuation and Markdown-emphasis differences. If evidence is missing, weak or misquoted, the user gets an
-explicit low-confidence fallback. Each fallback reason is logged, which is how a real bug
-(two-column PDFs being read straight across the page) was traced and fixed.
+pipeline: a follow-up such as "and a 6?" is first restated as a standalone question, then comes
+query embedding, pgvector cosine search filtered to that game's ruleset, deduplication and
+reranking, and a grounded answer under a strict JSON schema. Every quote the model cites is
+matched back to the stored rulebook text, allowing only whitespace, typographic-punctuation,
+list-bullet and Markdown-emphasis differences. An optional second pass has a model select the
+relevant passages and check that the cited quotes support the drafted answer. If evidence is
+missing, weak or misquoted, the user gets an explicit low-confidence fallback.
+
+**Failures are diagnosed from logs, not guessed at.** Every fallback logs its reason, and opt-in
+diagnostics record the search text, passage scores and any rejected answer. That is how real
+faults were traced on the deployed app and fixed with tests: two-column PDFs read straight across
+the page, lesson text attached to a question pushing the right rule out of the evidence, and a
+query rewrite that added a question the player never asked.
 
 **AI drafts are reviewed data, not live output.** The PDF import extracts text page by page with
 Apache PDFBox, asks the model for one structured draft, then fits it to the app's rules (styles
@@ -82,7 +90,7 @@ a paid call.
   `no-store` pages.
 - Friendly HTML error pages for browsers and JSON errors for API clients.
 
-**Database changes are safe to upgrade.** Nine Flyway migrations, with tests that upgrade older
+**Database changes are safe to upgrade.** Ten Flyway migrations, with tests that upgrade older
 databases and check that existing sessions, history and other games survive. Teaching and setup
 content is published append-only, so past sessions keep the exact content they used.
 
@@ -107,9 +115,9 @@ flowchart LR
   Draft --> AI
 ```
 
-Rule answering: question → resolve the session's ruleset → embed → filtered vector search →
-rerank → grounded answer under a JSON schema → validate every quote → answer with sources, or
-an explicit fallback.
+Rule answering: question → resolve the session's ruleset → restate a follow-up as a standalone
+question → embed → filtered vector search → rerank → grounded answer under a JSON schema →
+validate every quote → optional support check → answer with sources, or an explicit fallback.
 
 More in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -119,7 +127,7 @@ More in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | --- | --- |
 | Backend | Java 21, Spring Boot 3.5 (Web, Data JPA, Validation, Actuator) |
 | Data | PostgreSQL 17, pgvector, Flyway |
-| AI | OpenAI Responses API with structured outputs (`gpt-4.1-mini` by default), `text-embedding-3-small`, Whisper and text-to-speech |
+| AI | OpenAI Responses API with structured outputs (`gpt-4.1-mini` by default, with an optional reasoning model for answers), `text-embedding-3-small`, Whisper and text-to-speech |
 | Documents | Apache PDFBox 3 |
 | Front end | Thymeleaf, hand-written CSS, small vanilla JavaScript modules |
 | Testing | JUnit 5, Mockito, Testcontainers (pgvector), Spring Boot Test |
@@ -156,8 +164,8 @@ your own copy, follow [DEPLOY_GCP.md](docs/DEPLOY_GCP.md).
 ## Tests
 
 ```powershell
-.\gradlew.bat test             # 429 unit tests, no Docker needed
-.\gradlew.bat integrationTest  # 110 integration tests on real PostgreSQL + pgvector (Docker)
+.\gradlew.bat test             # 465 unit tests, no Docker needed
+.\gradlew.bat integrationTest  # 114 integration tests on real PostgreSQL + pgvector (Docker)
 .\gradlew.bat check bootJar    # both suites, then the executable JAR
 ```
 
@@ -195,7 +203,8 @@ step, including failed live tests and their fixes, is recorded in the
 
 - Answer quality has been checked by hand on small question sets, not with a broad benchmark.
 - Scanned PDFs (pictures of pages) aren't read; there is no OCR.
-- The AI request caps are counted in memory, so they assume a single running instance.
+- The AI request caps are counted in memory, so they are per running instance and reset on restart.
+- A cited answer takes several seconds, because it makes up to four model calls in a row.
 - Games can be hidden but not deleted; rules sources can be removed.
 
 ## Rules and trademarks
