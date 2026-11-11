@@ -45,7 +45,7 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
                 "properties", Map.of("query", Map.of("type", "string"), "resolved", Map.of("type", "boolean")),
                 "required", List.of("query", "resolved"));
         try {
-            String text = outputText(send(input, "standalone_rule_query", querySchema));
+            String text = outputText(sendCheck(input, "standalone_rule_query", querySchema));
             if (text == null) { return Optional.empty(); }
             var result = mapper.readTree(text);
             if (result == null || !result.isObject() || result.size() != 2
@@ -65,7 +65,7 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
                 "properties", Map.of("chunkIds", Map.of("type", "array", "items", Map.of("type", "string"))),
                 "required", List.of("chunkIds"));
         try {
-            String text = outputText(send(input, "relevant_rule_evidence", schema));
+            String text = outputText(sendCheck(input, "relevant_rule_evidence", schema));
             if (text == null) { return List.of(); }
             var result = mapper.readTree(text);
             if (result == null || !result.isObject() || result.size() != 1
@@ -85,7 +85,7 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
         var schema = Map.<String, Object>of("type", "object", "additionalProperties", false,
                 "properties", Map.of("supported", Map.of("type", "boolean")), "required", List.of("supported"));
         try {
-            String text = outputText(send(input, "cited_answer_support", schema));
+            String text = outputText(sendCheck(input, "cited_answer_support", schema));
             if (text == null) { return false; }
             var result = mapper.readTree(text);
             if (result == null || !result.isObject() || result.size() != 1 || !result.path("supported").isBoolean()) { throw invalid(); }
@@ -95,6 +95,19 @@ public class OpenAiLlmClient implements LlmClient, QueryRewriteClient, EvidenceR
 
     private JsonNode send(LlmRequest input, String schemaName, Map<String, Object> outputSchema) {
         return send(input, schemaName, outputSchema, config.maxOutputTokens(), config.timeout());
+    }
+
+    /**
+     * Rewrites and evidence reviews return a sentence, a short ID list or one boolean. Without reasoning
+     * tokens to pay for, the answer's output budget only lets a looping response run on: live, a relevance
+     * review on gpt-4.1-mini took 28 s to fill 4096 tokens and was then rejected as incomplete. A reasoning
+     * model keeps the configured budget because its reasoning counts against the same limit.
+     */
+    static final int CHECK_MAX_OUTPUT_TOKENS = 800;
+
+    private JsonNode sendCheck(LlmRequest input, String schemaName, Map<String, Object> outputSchema) {
+        int limit = config.usesLuna() ? config.maxOutputTokens() : Math.min(config.maxOutputTokens(), CHECK_MAX_OUTPUT_TOKENS);
+        return send(input, schemaName, outputSchema, limit, config.timeout());
     }
 
     private JsonNode send(LlmRequest input, String schemaName, Map<String, Object> outputSchema, int maxOutputTokens,

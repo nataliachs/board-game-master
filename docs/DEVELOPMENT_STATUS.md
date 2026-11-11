@@ -36,6 +36,36 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Clear session questions searched alone; small output budget for check calls — 2026-11-11
+
+Reported: answers take too long and are sometimes wrong. Cloud Run logs for revision 00039
+(`gpt-5.6-luna` at `medium`, checks on `gpt-4.1-mini`, evidence review on) showed two causes.
+
+- **Lesson text buried the right rule.** "What happens when Person A puts down an attack and Person
+  B puts down an attack, but Person C puts down a Nope?" was withheld four times in a row. Searched
+  alone it ranked Nope 0.63, the Noped-Attack example 0.55 and Attack 0.47 first. With the welcome
+  lesson text attached, ten general passages (Overview, Setup, Defuse…) scored 0.50–0.67; keeping each
+  passage's higher score put Attack 13th, outside the 12-passage review pool, so the answer model saw
+  Nope and the example without the Attack rule and declined (`MODEL_INSUFFICIENT_EVIDENCE`). A session
+  question that no rewrite made standalone is now searched alone first. If a passage reaches the
+  regular similarity threshold, only those scores are used (one embedding, a smaller pool for the
+  review and answer calls); otherwise the padded query is searched as before and each passage keeps
+  its higher score. This replaces the always-two-searches merge from 2026-11-10.
+- **A check call ran away.** One relevance review took 28 s and ended `LLM_INVALID_RESPONSE`, which
+  matches a looping response filling the answer's 4096-token output budget. Rewrite, relevance and
+  support calls now send at most 800 output tokens unless the model reasons (reasoning counts against
+  the same limit), so such a failure ends in a few seconds. It still ends in the fallback answer.
+
+Typical answers on that revision took 5–10 s: up to four model calls in a row, of which the `medium`
+effort answer is the longest (2.7–10 s). These changes do not shorten that; it follows from the
+production settings chosen for correctness.
+
+`RuleRetrievalServiceTest` (clear question: one search, own scores only; vague question: both
+searches merged) and `OpenAiLlmClientTest` (budget for mini, configured limit kept for Luna and for
+answers) cover this. Validation: 448 unit tests passed. The integration tests did not run (Docker
+was not running locally). Not deployed or retested live; whether the Attack/Nope question is now
+answered correctly is unverified.
+
 ## Separate model for rewriting and evidence review — 2026-11-10
 
 Live timing logs showed answers slowing from 2–6 s (gpt-4.1-mini, revisions 29–30) to 9–29 s once

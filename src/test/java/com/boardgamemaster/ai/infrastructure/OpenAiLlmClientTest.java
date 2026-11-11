@@ -50,6 +50,30 @@ class OpenAiLlmClientTest {
         assertThat(client.supportsAnswer(input)).isTrue();
         assertThat(mapper.readTree(request).path("text").path("format").path("name").asText()).isEqualTo("cited_answer_support");
     }
+    @Test void rewriteAndReviewCallsHaveASmallOutputBudgetUnlessTheModelReasons() throws Exception {
+        // Live: a relevance review on gpt-4.1-mini ran for 28 s filling the answer's 4096-token budget.
+        var mini = client(new LlmProperties("openai", "gpt-4.1-mini", "fixture-key", Duration.ofSeconds(3), 4096, "none"));
+        response = envelope(mapper.writeValueAsString(Map.of("chunkIds", List.of(chunkId))));
+        mini.selectEvidence(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).isEqualTo(800);
+        response = envelope("{\"supported\":true}");
+        mini.supportsAnswer(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).isEqualTo(800);
+        response = envelope("{\"query\":\"\",\"resolved\":false}");
+        mini.rewrite(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).isEqualTo(800);
+        var small = client(new LlmProperties("openai", "gpt-4.1-mini", "fixture-key", Duration.ofSeconds(3), 300, "none"));
+        small.rewrite(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).as("never above the configured limit").isEqualTo(300);
+        // Reasoning tokens count against the same limit, so a reasoning model keeps the configured budget.
+        response = envelope("{\"supported\":true}");
+        client(luna("medium")).supportsAnswer(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).isEqualTo(4096);
+        // Answers are unchanged.
+        response = envelope(mapper.writeValueAsString(Map.of("answer", "", "sufficientEvidence", false, "citations", List.of())));
+        mini.generate(input);
+        assertThat(mapper.readTree(request).path("max_output_tokens").asInt()).isEqualTo(4096);
+    }
     @ParameterizedTest @ValueSource(strings = {"null", "{}", "{\"chunkIds\":null}", "{\"chunkIds\":[1]}",
             "{\"chunkIds\":[\"invalid\"]}", "{\"chunkIds\":[],\"extra\":true}"})
     void malformedRelevanceContractRejected(String body) throws Exception {
