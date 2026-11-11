@@ -520,8 +520,10 @@ rule document; indexing runs afterwards and may be retried. Nothing is saved if 
 drafting fails. Quote validation (`SourceQuoteMatcher`) accepts whitespace and typographic
 punctuation differences only and always returns the original source span.
 
-**Security filters.** `AdminAccessFilter` puts HTTP Basic auth on `/admin` and content-changing
-catalog and rule APIs, and refuses them in `prod` when no password is configured.
+**Security filters.** `AdminAccessFilter` protects `/admin` and content-changing catalog and rule
+APIs, and refuses them in `prod` when no password is configured. Admin pages use a sign-in page
+that sets a signed, expiring cookie (`AdminSignIn`); HTTP Basic credentials are accepted everywhere
+and are what the write APIs ask for.
 Rule questions (`POST /api/v1/games/{gameId}/questions`) are the exception: they change nothing and
 the home page chat sends them for any visitor, so they stay open and rely on the paid-request caps.
 `PaidRequestLimitFilter` caps question, voice and narration requests per client per hour and per

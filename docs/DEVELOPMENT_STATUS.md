@@ -10,11 +10,11 @@ is the default depth. Questions preserve the current lesson and setup step.
 
 **Milestone 8 — Voice + Minimal Demo UI: implemented.** All nine milestones are done.
 
-Since then: Google Cloud deployment, a password-protected admin area, game import from a
-rulebook PDF, removal of rules sources, friendly error pages and a scrollable conversation. Current
-follow-up work focuses on answer relevance, contextual follow-up questions and citation quality.
-The latest full check (2026-11-09) passed **539 tests** (429 unit and 110 PostgreSQL/pgvector
-integration tests) with mock providers.
+Since then: Google Cloud deployment, an admin area with a sign-in page and adjustable question
+limits, game import from a rulebook PDF, removal of rules sources, friendly error pages and a
+scrollable conversation. Current follow-up work focuses on answer relevance, contextual follow-up
+questions and citation quality. The latest full check (2026-11-11) passed **579 tests** (465 unit
+and 114 PostgreSQL/pgvector integration tests) with mock providers.
 
 Manual OpenAI tests covered Lantern Trail sessions and a small set of Ticket to Ride questions.
 The latest precise-citation retest passed for the reported exchange. Relevance/support review

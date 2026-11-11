@@ -92,6 +92,7 @@ in a new reference teaching flow. Existing lessons, sessions, history, documents
 V8 adds optional game `category` and `cover_image_url` columns. V9 replaces the Catan reference game with
 Ticket to Ride: it deletes the Catan seed together with its sessions, history and any rule documents or vectors
 attached to its version, then adds Ticket to Ride with lessons and guided setup. Other games are not changed.
+V10 adds `app_settings`, which holds settings an admin changes while the app runs (the question limits).
 
 ```powershell
 .\gradlew.bat test             # Domain validation and MVC/error tests; no Docker needed
@@ -121,7 +122,7 @@ Invoke-RestMethod http://localhost:8080/v3/api-docs
 
 Health should contain `"status":"UP"`. Swagger documents catalog, rules, retrieval, questions,
 sessions, teaching and guided setup operations. The latest full local `check bootJar` run passed
-**539 tests** (429 unit and 110 integration) with mock providers and built the executable JAR.
+**579 tests** (465 unit and 114 integration) with mock providers and built the executable JAR.
 This is local validation, separate from GitHub Actions or live-model evaluation; see
 development status for the dated evidence and remaining limitations.
 
