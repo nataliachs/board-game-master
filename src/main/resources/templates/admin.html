@@ -5,10 +5,11 @@
   <div class="admin-head">
     <div><p class="eyebrow">Admin</p><h1>Your game library</h1>
       <p class="lead">Add games, then give each one setup steps and lessons. A game appears to players once it is active and has lessons.</p></div>
-    <a class="button primary" href="/admin/games/new">Add a game</a>
+    <div class="actions"><a class="button primary" href="/admin/games/new">Add a game</a>
+      <form th:if="${adminProtected}" action="/admin/logout" method="post" class="inline-form"><button type="submit">Sign out</button></form></div>
   </div>
   <div th:replace="~{fragments :: alerts}"></div>
-  <p class="admin-warning">This admin area has no sign-in. Run the app only on your own computer.</p>
+  <p class="admin-warning" th:unless="${adminProtected}">This admin area has no sign-in. Run the app only on your own computer.</p>
 
   <p th:if="${#lists.isEmpty(games)}" class="empty-results">No games yet. Choose <strong>Add a game</strong> to create the first one.</p>
   <div class="table-wrap" th:if="${!#lists.isEmpty(games)}">
@@ -31,5 +32,21 @@
       </tbody>
     </table>
   </div>
+  <section class="card admin-form" id="limits" aria-labelledby="limits-title">
+    <h2 id="limits-title">Question limits</h2>
+    <p>Every question, spoken question and read-aloud calls your AI provider and costs money. These limits stop
+      a busy day from running up the bill. Players who reach a limit are asked to try again later; lessons and setup keep working.</p>
+    <form action="/admin/limits" method="post">
+      <div class="field-grid">
+        <div class="field"><label for="perClientPerHour">Per visitor, per hour</label><input id="perClientPerHour" name="perClientPerHour" type="number" min="0" max="100000" required th:value="${limits.perClientPerHour}">
+          <p class="hint">Use 0 for no limit. Default: <span th:text="${defaultLimits.perClientPerHour}">0</span>.</p></div>
+        <div class="field"><label for="totalPerDay">Everyone together, per day</label><input id="totalPerDay" name="totalPerDay" type="number" min="0" max="100000" required th:value="${limits.totalPerDay}">
+          <p class="hint">Use 0 for no limit. Default: <span th:text="${defaultLimits.totalPerDay}">0</span>.</p></div>
+      </div>
+      <p class="hint" th:text="${limits.custom} ? 'These limits were set here and stay until you change them.' : 'The defaults are in use.'"></p>
+      <div class="actions"><button class="primary" type="submit">Save limits</button>
+        <button type="submit" name="reset" value="yes" formnovalidate th:if="${limits.custom}">Use the defaults</button></div>
+    </form>
+  </section>
   <p class="muted small">Step-by-step help: <code>docs/ADMIN_GUIDE.md</code> in the project.</p>
 </main><footer>Admin changes apply to new sessions. Sessions already started keep the lessons and steps they began with.</footer></body></html>

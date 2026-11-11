@@ -20,9 +20,12 @@ public class ContextualQueryRewriter {
             Never answer the question, invent rules or add facts, quantities, exceptions or outcomes.
             Use the preceding USER questions and authored topic context only to resolve omitted references.
             Preserve the current question's quantities, negations, language and conditions.
-            Expand vague intents into concrete rule-search terms. For risk or downside, explicitly ask
-            about possible consequences or penalties of the identified action; do not merely repeat "risk".
-            This is a question about whether consequences exist, not a claim that there is a penalty.
+            Ask exactly one question: the user's. Never append a second question or a new aspect the user
+            did not ask about, such as consequences, penalties, exceptions or chaining.
+            Expand vague intents into concrete rule-search terms. ONLY when the current question itself asks
+            about a risk or downside, ask about possible consequences or penalties of the identified action;
+            do not merely repeat "risk". That is a question about whether consequences exist, not a claim
+            that there is a penalty. A question that does not mention risk or downside must not gain one.
             Never specify an unsupported penalty, amount, completion condition or outcome.
             Use a short content-focused question. Omit game names, edition labels and introductory framing
             from the query unless essential to identify a named mechanic; search already filters by game version.
@@ -79,7 +82,7 @@ public class ContextualQueryRewriter {
             data.put("question", question);
             var result = client.rewrite(new LlmRequest(INSTRUCTIONS, mapper.writeValueAsString(data)));
             if (result == null || result.isEmpty()) { return Optional.empty(); }
-            String query = result.get().strip();
+            String query = firstQuestion(result.get().strip());
             if (query.isBlank() || query.length() > Math.min(1000, inputLimit)
                     || query.codePoints().anyMatch(Character::isISOControl)) {
                 outcome = "INVALID";
@@ -134,6 +137,17 @@ public class ContextualQueryRewriter {
             LOG.info("Empty-search query expansion completed: outcome={}, elapsedMs={}",
                     outcome, (System.nanoTime() - started) / 1_000_000);
         }
+    }
+
+    /**
+     * The rewrite restates one question, and the answer step is told it is what the user means. Live, the
+     * rewriter turned "Can I Nope a Defuse?" into that question plus "What are the consequences or penalties,
+     * if any, of attempting to Nope a Defuse card?"; the rules say nothing about penalties, so the answer was
+     * withheld. Anything after the first question is dropped.
+     */
+    static String firstQuestion(String query) {
+        int end = query.indexOf('?');
+        return end < 0 || end == query.length() - 1 ? query : query.substring(0, end + 1).strip();
     }
 
     private static String prefix(String text, int limit) {

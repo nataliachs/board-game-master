@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#140d1c"><title>Admin sign-in · Board Game Master</title><link rel="stylesheet" href="/css/demo.css"></head>
+<body><header th:replace="~{fragments :: header}"></header>
+<main class="signin-layout">
+  <section class="card admin-form signin-card" aria-labelledby="signin-title">
+    <p class="eyebrow">Admin</p>
+    <h1 id="signin-title">Sign in</h1>
+    <p class="lead" th:unless="${unavailable}">The game library, lessons and rule sources are managed here. Players don't need to sign in.</p>
+    <p th:if="${unavailable}" class="alert error" role="alert">The admin area is switched off because no admin password has been set for this site.</p>
+    <p th:if="${error}" class="alert error" role="alert" th:text="${error}"></p>
+    <p th:if="${notice}" class="alert" th:text="${notice}"></p>
+    <form th:unless="${unavailable}" action="/admin/login" method="post">
+      <div class="field"><label for="username">Username</label><input id="username" name="username" type="text" required maxlength="100" autocomplete="username" autocapitalize="none" spellcheck="false" th:value="${username}" th:autofocus="${username == null or #strings.isEmpty(username)}"></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" required maxlength="1000" autocomplete="current-password" th:autofocus="${username != null and !#strings.isEmpty(username)}"></div>
+      <div class="actions"><button class="primary" type="submit">Sign in</button><a class="button" href="/">Back to the games</a></div>
+      <p class="hint">You stay signed in on this browser for 8 hours.</p>
+    </form>
+    <a th:if="${unavailable}" class="button primary" href="/">Back to the games</a>
+  </section>
+</main></body></html>

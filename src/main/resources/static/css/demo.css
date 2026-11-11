@@ -321,3 +321,20 @@ code { font: 500 .85em var(--mono); background: rgba(255, 255, 255, .08); paddin
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Admin sign-in and the question-limit page */
+.signin-layout { max-width: 480px; margin: clamp(2rem, 8vh, 5rem) auto 3rem; padding: 0 1.25rem; }
+.signin-card { border-top: 3px solid var(--brass); animation: settle .5s ease-out both; }
+.signin-card h1 { font-size: clamp(2.2rem, 6vw, 3rem); margin-bottom: .6rem; }
+.signin-card .lead { color: var(--mute); margin-bottom: 1.4rem; }
+.signin-card .field { margin-bottom: 1rem; }
+.signin-card .field input { width: 100%; }
+.inline-form { display: inline; margin: 0; }
+.admin-layout > section.card { margin: 1.5rem 0; }
+.break-card { text-align: center; border-top: 3px solid var(--brass); animation: settle .5s ease-out both; }
+.break-card h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); }
+.break-card .lead { max-width: 52ch; margin: 0 auto 1.2rem; }
+.break-art { width: 96px; height: 96px; margin: 0 auto 1.2rem; display: block; }
+.break-list { max-width: 52ch; margin: 0 auto; padding-left: 1.2rem; text-align: left; color: var(--mute); }
+.break-list li { margin-bottom: .4rem; }
+.break-card .actions { justify-content: center; margin-top: 1.6rem; }

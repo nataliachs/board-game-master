@@ -272,6 +272,8 @@ PDF upload and removing a source are available in the admin area, not through th
 import, document editing, deduplication and asynchronous ingestion are not implemented, and
 repeating an import creates a new document. When `ADMIN_PASSWORD` is set, these content-changing
 requests need HTTP Basic auth as `admin` (see `AdminAccessFilter`); the `prod` profile requires it.
+The admin pages themselves use a sign-in page at `/admin/login` (see `AdminSignIn`) and also accept
+Basic credentials.
 Asking a rule question (`POST /api/v1/games/{gameId}/questions`) needs no password; it is limited by
 the paid-request caps instead.
 

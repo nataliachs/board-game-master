@@ -37,6 +37,20 @@ class ContextualQueryRewriterTest {
         return new ContextualQueryRewriter(client, mapper, new QueryRewriteProperties(enabled));
     }
 
+    @Test void rewriteKeepsOnlyTheUsersQuestionAndThePromptForbidsAddingOne() {
+        // Exploding Kittens, live: the appended penalties question made the answer step withhold a plain "No".
+        when(client.rewrite(any())).thenAnswer(invocation -> {
+            assertThat(((LlmRequest) invocation.getArgument(0)).instructions()).contains("Ask exactly one question",
+                    "ONLY when the current question itself asks", "must not gain one");
+            return Optional.of("Can a Nope card be played to cancel a Defuse card? What are the consequences or penalties,"
+                    + " if any, of attempting to Nope a Defuse card?");
+        });
+        assertThat(rewriter(true).rewrite("Can I Nope a Defuse?", context, 4000))
+                .contains("Can a Nope card be played to cancel a Defuse card?");
+        doReturn(Optional.of("Returning unwanted starting mission cards")).when(client).rewrite(any());
+        assertThat(rewriter(true).rewrite("Can I return them?", context, 4000)).contains("Returning unwanted starting mission cards");
+    }
+
     @Test void disabledLongAndNoHistoryQuestionsAvoidProviderCalls() {
         assertThat(rewriter(false).rewrite("What's the risk?", context, 4000)).isEmpty();
         assertThat(rewriter(true).rewrite("q".repeat(81), context, 4000)).isEmpty();

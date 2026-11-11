@@ -54,8 +54,12 @@ class PaidRequestLimitFilterTest {
         var filter = new PaidRequestLimitFilter(1, 0, new MutableClock(START));
         assertThat(run(filter, "POST", "/ui/sessions/abc/messages").getStatus()).isEqualTo(200);
         var limited = run(filter, "POST", "/ui/sessions/abc/messages");
-        assertThat(limited.getStatus()).isEqualTo(429);
-        assertThat(limited.getContentAsString()).contains("Lessons and setup still work");
+        assertThat(limited.getStatus()).as("the session page is sent to the styled limit page").isEqualTo(303);
+        assertThat(limited.getHeader("Location")).as("a malformed session id is not passed on").isEqualTo("/ui/limit-reached");
+        assertThat(limited.getContentAsString()).isEmpty();
+        var session = run(filter, "POST", "/ui/sessions/0f8fad5b-d9cb-469f-a165-70867728950e/messages");
+        assertThat(session.getHeader("Location")).isEqualTo("/ui/limit-reached?session=0f8fad5b-d9cb-469f-a165-70867728950e");
+        assertThat(run(filter, "POST", "/api/v1/sessions/abc/messages").getStatus()).isEqualTo(429);
         assertThat(run(filter, "POST", "/api/v1/sessions/abc/messages").getContentAsString()).contains("RATE_LIMITED");
         assertThat(run(filter, "POST", "/ui/sessions/abc/teaching").getStatus()).isEqualTo(200);
     }
@@ -67,8 +71,8 @@ class PaidRequestLimitFilterTest {
         for (String path : new String[] {"/ui/sessions/abc/messages;x", "/ui/sessions/abc/%6Dessages",
                 "//ui/sessions/abc/messages", "/ui;x/sessions/abc/messages"}) {
             var limited = run(filter, "POST", path);
-            assertThat(limited.getStatus()).as(path).isEqualTo(429);
-            assertThat(limited.getContentAsString()).as(path).contains("Lessons and setup still work");
+            assertThat(limited.getStatus()).as(path).isEqualTo(303);
+            assertThat(limited.getHeader("Location")).as(path).isEqualTo("/ui/limit-reached");
         }
     }
 

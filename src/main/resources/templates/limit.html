@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#140d1c"><title>A short break · Board Game Master</title><link rel="stylesheet" href="/css/demo.css"></head><body><header th:replace="~{fragments :: header}"></header>
+<main class="review-layout"><section class="card break-card">
+  <svg class="break-art" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="46" fill="none" stroke="#f2b45a" stroke-width="5"/><path d="M60 32v30l19 12" fill="none" stroke="#f2b45a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="60" cy="60" r="5" fill="#e0486f"/></svg>
+  <p class="eyebrow">Question limit reached</p>
+  <h1>The Game Master needs a short break.</h1>
+  <p class="lead">Too many questions were asked recently, so your last question was not sent. Nothing is lost: your game is exactly where you left it.</p>
+  <ul class="break-list">
+    <li>Lessons and setup steps still work, so you can keep going.</li>
+    <li>Questions open again within the hour. If today's limit for everyone was reached, they open again tomorrow.</li>
+  </ul>
+  <div class="actions"><a th:if="${sessionId != null}" class="button primary" th:href="@{/sessions/{id}(id=${sessionId})}">Back to your game</a>
+    <a class="button" th:classappend="${sessionId == null} ? 'primary'" href="/">Return to game selection</a></div>
+</section></main></body></html>
