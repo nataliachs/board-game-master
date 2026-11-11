@@ -203,6 +203,23 @@ class EvidenceReviewTest {
         assertThatThrownBy(this::ask).isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(client, llm);
     }
+    @Test void smallPoolGoesToTheAnswerWholeWithoutASelectionCallAndIsStillSupportChecked() {
+        // Exploding Kittens, live: selection kept "Nope" and "Attack" from five passages but dropped the worked example.
+        var small = new EvidenceReviewService(client, new EvidenceReviewProperties(true, null, null, 2), mapper);
+        var answer = service(small).askPinned(game, version, "What's the risk?", context);
+        assertThat(answer.answer()).isNotEqualTo(RuleAnswerService.FALLBACK);
+        verify(client, never()).selectEvidence(any());
+        verify(client, times(1)).supportsAnswer(any());
+        var sent = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llm).generate(sent.capture());
+        assertThat(sent.getValue().input()).contains(unrelated.chunkId().toString(), source.chunkId().toString());
+
+        var larger = new EvidenceReviewService(client, new EvidenceReviewProperties(true, null, null, 1), mapper);
+        service(larger).askPinned(game, version, "What's the risk?", context);
+        verify(client, times(1)).selectEvidence(any());
+        assertThat(new EvidenceReviewProperties(true, null, null, null).selectAbove()).isEqualTo(5);
+        assertThatThrownBy(() -> new EvidenceReviewProperties(true, null, null, 21)).isInstanceOf(IllegalArgumentException.class);
+    }
     @Test void oversizedReviewInputDeclinesWithoutCallingProvider() {
         var pool = new RuleAnswerPromptBuilder.Prompt(new LlmRequest("Fixture instructions", "x".repeat(32001)), List.of(source));
         assertThat(review.select(pool)).isEmpty(); verifyNoInteractions(client);
