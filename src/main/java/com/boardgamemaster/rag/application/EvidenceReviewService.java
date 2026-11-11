@@ -34,6 +34,12 @@ public class EvidenceReviewService {
 
     public List<RuleVectorStore.Match> select(RuleAnswerPromptBuilder.Prompt pool) {
         if (!enabled() || pool.evidence().isEmpty()) { return pool.evidence(); }
+        // Live: from a five-passage pool the selection kept "Nope" and "Attack" but dropped the rulebook's worked
+        // example of a Noped Attack, and the answer model then declined. A small pool needs no pruning.
+        if (pool.evidence().size() <= config.selectAbove()) {
+            LOG.info("Evidence relevance review completed: outcome=SKIPPED_SMALL_POOL, candidates={}, elapsedMs=0", pool.evidence().size());
+            return pool.evidence();
+        }
         String outcome = "REJECTED";
         long started = System.nanoTime();
         try {

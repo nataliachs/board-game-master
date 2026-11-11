@@ -36,6 +36,25 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Small evidence pools skip relevance selection — 2026-11-11
+
+Live retest of the change below on revision `board-game-master-00041-l87`: the Attack/Nope question
+still fell back (`MODEL_INSUFFICIENT_EVIDENCE`, 13 s). The search fix worked: one search, a pool of
+five (Nope 0.63, the Noped-Attack example 0.55, Attack 0.47, Your turn 0.39, Skip 0.38). The
+relevance selection (3.8 s on `gpt-4.1-mini`) then kept Nope and Attack and dropped the worked
+example, and the answer model declined. Across the logged attempts the selection never passed Nope,
+Attack and the example together, and the answer model declined five of eight times when given only
+two of them.
+
+With evidence review on, relevance selection now runs only when the pool holds more than
+`RAG_EVIDENCE_REVIEW_SELECT_ABOVE` passages (default 5, the number an ordinary answer receives; `0`
+always selects). A smaller pool goes to the answer model whole, which saves one model call; the
+cited-answer support review still runs. `EvidenceReviewTest` covers the skip, the boundary and the
+setting's bounds. Validation: 449 unit tests passed; integration tests did not run (Docker was not
+running locally). Not deployed or retested live: whether the answer model answers correctly with all
+five passages is unverified. If it still declines, the next suspect is the question's ambiguity
+(it does not say whose Attack is Noped) against the prompt's instructions to decline when unsure.
+
 ## Clear session questions searched alone; small output budget for check calls — 2026-11-11
 
 Reported: answers take too long and are sometimes wrong. Cloud Run logs for revision 00039

@@ -49,6 +49,7 @@ Active configuration:
 | `RAG_EVIDENCE_REVIEW_ENABLED` | `false`; experimental answer-only relevance selection and cited-answer support review; adds up to two LLM calls |
 | `RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR` | `0.35`; experimental pool/quote similarity floor, finite 0–1; applies only with review enabled |
 | `RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT` | `12`; candidate passages before relevance selection, 1–20 |
+| `RAG_EVIDENCE_REVIEW_SELECT_ABOVE` | `5`; relevance selection runs only when the pool holds more passages than this (0–20; `0` always selects). Smaller pools go to the answer whole, saving one LLM call; the support review still runs |
 | `RAG_QUERY_DIAGNOSTICS_LEVEL` | `OFF`; local opt-in `DEBUG` logs effective search-query text and candidate metadata/scores before threshold filtering |
 | `LLM_PROVIDER` | `disabled`; set `openai` to enable answer generation |
 | `LLM_MODEL` | `gpt-4.1-mini` (default), or opt-in `gpt-5.6-luna`; Responses structured outputs |

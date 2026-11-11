@@ -104,6 +104,7 @@ boardgame:
     enabled: ${RAG_EVIDENCE_REVIEW_ENABLED:false}
     candidate-floor: ${RAG_EVIDENCE_REVIEW_CANDIDATE_FLOOR:0.35}
     candidate-count: ${RAG_EVIDENCE_REVIEW_CANDIDATE_COUNT:12}
+    select-above: ${RAG_EVIDENCE_REVIEW_SELECT_ABOVE:5}
   rules:
     chunk-size: ${RULE_CHUNK_SIZE:1200}
     chunk-overlap: ${RULE_CHUNK_OVERLAP:200}
