@@ -45,7 +45,7 @@ class BootstrapIntegrationTest {
 
     @Test
     void migrationInstallsUsableVectorsAndIsRepeatable() {
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("10");
         assertThat(jdbc.queryForObject("SELECT extversion FROM pg_extension WHERE extname = 'vector'",
                 String.class)).isNotBlank();
         assertThat(jdbc.queryForObject("SELECT '[1,2,3]'::vector <-> '[1,2,3]'::vector", Double.class))
@@ -53,7 +53,7 @@ class BootstrapIntegrationTest {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(jdbc.queryForList("SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
                 String.class)).containsExactlyInAnyOrder("flyway_schema_history", "games", "game_versions", "rule_documents", "rule_chunks", "rule_chunk_embeddings",
-                        "teaching_flows", "teaching_sections", "game_sessions", "conversation_messages", "setup_flows", "setup_steps");
+                        "teaching_flows", "teaching_sections", "game_sessions", "conversation_messages", "setup_flows", "setup_steps", "app_settings");
     }
 
     @Test
@@ -129,6 +129,28 @@ class BootstrapIntegrationTest {
         var session = post("/ui/sessions", "gameId=" + gameId + "&playerCount=2");
         assertThat(session.statusCode()).isEqualTo(302);
         assertThat(get(URI.create(session.headers().firstValue("Location").orElseThrow()).getPath()).body()).contains("Welcome", "Lesson 1 of 2");
+    }
+
+    @Test
+    void adminChangesQuestionLimitsWithoutARestartAndCanReturnToTheDefaults() throws Exception {
+        String count = "SELECT count(*) FROM app_settings WHERE setting_key LIKE 'paid-requests.%'";
+        assertThat(get("/admin").body()).contains("Question limits", "The defaults are in use.");
+        try {
+            var saved = post("/admin/limits", "perClientPerHour=5000&totalPerDay=9000");
+            assertThat(saved.statusCode()).isEqualTo(302);
+            assertThat(saved.headers().firstValue("Location").orElseThrow()).endsWith("/admin#limits");
+            assertThat(jdbc.queryForObject("SELECT setting_value FROM app_settings WHERE setting_key = 'paid-requests.per-client-per-hour'",
+                    String.class)).isEqualTo("5000");
+            assertThat(get("/admin").body()).contains("value=\"5000\"", "value=\"9000\"", "These limits were set here", "Use the defaults");
+
+            assertThat(post("/admin/limits", "perClientPerHour=-1&totalPerDay=9000").statusCode()).isEqualTo(302);
+            assertThat(post("/admin/limits", "perClientPerHour=abc&totalPerDay=").statusCode()).isEqualTo(302);
+            assertThat(get("/admin").body()).as("rejected values change nothing").contains("value=\"5000\"", "value=\"9000\"");
+        } finally {
+            assertThat(post("/admin/limits", "reset=yes").statusCode()).isEqualTo(302);
+        }
+        assertThat(jdbc.queryForObject(count, Integer.class)).isZero();
+        assertThat(get("/admin").body()).contains("The defaults are in use.").doesNotContain("value=\"5000\"");
     }
 
     private HttpResponse<String> post(String path, String form) throws Exception {

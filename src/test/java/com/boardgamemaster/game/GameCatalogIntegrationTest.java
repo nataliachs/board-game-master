@@ -221,7 +221,7 @@ class GameCatalogIntegrationTest {
         upgradeJdbc.execute("CREATE TABLE bootstrap_marker (value TEXT NOT NULL)");
         upgradeJdbc.update("INSERT INTO bootstrap_marker VALUES ('preserved')");
         var upgrade = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(8);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(9);
         upgrade.validate();
         assertThat(upgradeJdbc.queryForObject("SELECT value FROM bootstrap_marker", String.class)).isEqualTo("preserved");
         assertThat(upgradeJdbc.queryForObject("SELECT count(*) FROM games WHERE slug = 'ticket-to-ride'", Integer.class)).isEqualTo(1);

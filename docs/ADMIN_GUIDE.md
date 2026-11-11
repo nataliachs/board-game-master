@@ -4,8 +4,18 @@ The admin area lets you add games without writing SQL or calling the API. Open i
 [localhost:8080/admin](http://localhost:8080/admin), or choose **Admin** in the page header.
 
 > When `ADMIN_PASSWORD` is set (always on Google Cloud, see [DEPLOY_GCP.md](DEPLOY_GCP.md)), the
-> browser asks for the admin username and password. Without it, the admin area is open, so run it
-> that way only on your own computer.
+> admin area opens on a sign-in page. You stay signed in on that browser for 8 hours; **Sign out**
+> is next to **Add a game**. Without a password the admin area is open, so run it that way only on
+> your own computer.
+
+## Question limits
+
+At the bottom of the admin page, **Question limits** sets how many questions (typed, spoken or
+read aloud) one visitor may ask per hour and how many everyone together may ask per day. Use `0`
+for no limit. **Save limits** takes effect within 30 seconds and needs no restart or deployment;
+the values are kept in the database. **Use the defaults** returns to the values from the app's
+configuration. A player who reaches a limit sees a page saying the Game Master needs a short
+break; lessons and setup keep working.
 
 ## Fastest: import a game from a rulebook PDF
 

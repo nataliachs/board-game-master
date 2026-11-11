@@ -121,7 +121,7 @@ account; grant it and run the command again.
 
 ## 5. Sign in to the admin area
 
-Open `https://<your-url>/admin`. The browser asks for a username and password:
+Open `https://<your-url>/admin`. The sign-in page asks for a username and password:
 
 - Username: `admin`
 - Password: shown by `gcloud secrets versions access latest --secret=bgm-admin-password`
@@ -129,6 +129,11 @@ Open `https://<your-url>/admin`. The browser asks for a username and password:
 Then add games as described in the [admin guide](ADMIN_GUIDE.md). The admin pages and all
 content-changing API calls (`POST`/`PUT` under `/api/v1/games` and `/api/v1/game-versions`) need
 this password. If `ADMIN_PASSWORD` is ever missing, they are refused rather than left open.
+
+Signing in sets a cookie for the admin pages that lasts 8 hours. It is signed with a key derived
+from the admin password, so it keeps working across deployments and instances, and changing the
+password signs everyone out. Ten wrong passwords from one address block that address for 15
+minutes. Scripts can still send the username and password as HTTP Basic credentials.
 
 ## 6. Limits on AI requests
 
@@ -141,7 +146,10 @@ Rule questions, voice and narration can call OpenAI, so the `prod` profile caps 
 
 Over a cap, players see a short "the Game Master needs a break" page; lessons and setup keep
 working. Counters reset when the app restarts, which is why the OpenAI budget limit matters.
-To change a cap:
+
+The easiest way to change a cap is **Question limits** at the bottom of `/admin`: it applies within
+30 seconds, needs no deployment and is kept in the database, where it overrides the two settings
+above until you choose **Use the defaults**. To change the default itself:
 
 ```powershell
 gcloud run services update board-game-master --region $REGION --update-env-vars PAID_REQUESTS_PER_DAY=100

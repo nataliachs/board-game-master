@@ -73,7 +73,8 @@ timeouts and safe error mapping. Everything works with providers switched off, a
 a paid call.
 
 **Built to be exposed to the internet.**
-- HTTP Basic auth for admin pages and content-changing APIs, matching paths the way Spring
+- A sign-in page for the admin area (signed, expiring cookie; HTTP Basic still accepted) and
+  HTTP Basic auth for content-changing APIs, matching paths the way Spring
   routes them. A security review of the first version found a `/admin;x` bypass, now closed and
   covered by tests.
 - Per-client and per-day caps on requests that reach paid AI providers.

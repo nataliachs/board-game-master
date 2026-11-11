@@ -658,7 +658,7 @@ class SessionIntegrationTest {
         jdbc.update("INSERT INTO " + schema + ".games(id,slug,name,min_players,max_players,estimated_duration_minutes,active) VALUES (?,'user-game','User game',1,4,10,true)", other);
         var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()).schemas(schema)
                 .locations("classpath:db/migration").load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".games WHERE slug='catan'", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".game_sessions", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".conversation_messages", Integer.class)).isZero();

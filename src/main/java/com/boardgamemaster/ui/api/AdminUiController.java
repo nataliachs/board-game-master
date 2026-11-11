@@ -1,5 +1,7 @@
 package com.boardgamemaster.ui.api;
 
+import com.boardgamemaster.common.config.AdminSignIn;
+import com.boardgamemaster.common.config.PaidRequestLimits;
 import com.boardgamemaster.common.exception.PresentationFailure;
 import com.boardgamemaster.rules.domain.RuleImportException;
 import com.boardgamemaster.ui.application.AdminUiService;
@@ -24,12 +26,49 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 public class AdminUiController {
     private final AdminUiService admin;
     private final GameImportService imports;
-    public AdminUiController(AdminUiService admin, GameImportService imports) { this.admin = admin; this.imports = imports; }
+    private final PaidRequestLimits limits;
+    private final AdminSignIn signIn;
+    public AdminUiController(AdminUiService admin, GameImportService imports, PaidRequestLimits limits, AdminSignIn signIn) {
+        this.admin = admin; this.imports = imports; this.limits = limits; this.signIn = signIn;
+    }
+
+    /** True when a password protects the admin area, so pages can offer Sign out instead of a warning. */
+    @ModelAttribute("adminProtected")
+    public boolean adminProtected() { return signIn.configured(); }
 
     @GetMapping
     public String games(Model model) {
         model.addAttribute("games", admin.games());
+        model.addAttribute("limits", limits.current());
+        model.addAttribute("defaultLimits", limits.configured());
         return "admin";
+    }
+
+    /** Question limits apply at once and are stored in the database; no deployment is needed. */
+    @PostMapping("/limits")
+    public String limits(@RequestParam MultiValueMap<String, String> params, RedirectAttributes flash) {
+        try {
+            if (params.containsKey("reset")) {
+                var now = limits.reset();
+                flash.addFlashAttribute("notice", "Question limits are back to the defaults: " + describe(now) + ".");
+            } else {
+                Integer perClient = integerOrNull(first(params, "perClientPerHour")), perDay = integerOrNull(first(params, "totalPerDay"));
+                if (perClient == null || perDay == null) {
+                    throw new AdminFormException("Enter a whole number for both limits. Use 0 for no limit.");
+                }
+                var now = limits.update(perClient, perDay);
+                flash.addFlashAttribute("notice", "Question limits saved: " + describe(now) + ". They apply within 30 seconds.");
+            }
+        } catch (IllegalArgumentException e) {
+            flash.addFlashAttribute("error", e.getMessage());
+        } catch (RuntimeException e) {
+            flash.addFlashAttribute("error", message(e));
+        }
+        return "redirect:/admin#limits";
+    }
+    private static String describe(PaidRequestLimits.Limits limits) {
+        return (limits.perClientPerHour() == 0 ? "no limit per visitor" : limits.perClientPerHour() + " per visitor per hour")
+                + ", " + (limits.totalPerDay() == 0 ? "no daily limit" : limits.totalPerDay() + " per day for everyone");
     }
 
     @GetMapping("/games/new")

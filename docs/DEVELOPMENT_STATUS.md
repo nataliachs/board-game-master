@@ -36,6 +36,65 @@ still unverified. The dated notes below retain both successful tests and earlier
 The implementation notes and validation history are separate from live-model evaluation.
 Passing tests with mock providers does not establish real-model answer accuracy.
 
+## Question limits in the admin page, admin sign-in page, styled limit page — 2026-11-11
+
+Requested by the project owner after the hourly question limit stopped a test run and could only be
+changed by a new Cloud Run revision.
+
+- **Question limits without a deployment.** V10 adds `app_settings` (key, value, updated time).
+  `PaidRequestLimits` starts from `PAID_REQUESTS_PER_CLIENT_PER_HOUR` / `PAID_REQUESTS_PER_DAY`,
+  lets stored values override them, and re-reads them at most every 30 seconds so every instance
+  follows a change; an unreadable database keeps the last known values. `/admin` has a **Question
+  limits** form (0–100000, 0 = no limit) and **Use the defaults**. Requests are now counted even
+  while a cap is off, so a cap switched on later sees the current hour and day.
+- **Admin sign-in page.** `/admin` no longer triggers the browser's Basic prompt: visitors are
+  redirected to `/admin/login`. A correct username and password set the `bgm_admin` cookie
+  (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, path `/admin`, 8 hours) holding an expiry and
+  its HMAC-SHA256. The key is derived from the admin password, so no session is stored: deployments
+  and other instances keep the admin signed in and a password change signs everyone out. Sign-out
+  only clears the cookie in that browser; a copied cookie stays valid until it expires. Ten wrong
+  passwords from one address block it for 15 minutes (in memory, per instance; also counted for
+  Basic credentials, which had no limit before). Basic credentials still work everywhere and the
+  write APIs still answer 401 with a Basic challenge. Decision: stateless signed cookie rather than
+  server sessions, because Cloud Run instances restart and scale.
+- **Limit page.** A question over the limit from the session page is redirected (303) to
+  `/ui/limit-reached`, a page in the site's look with a link back to the game; reloading it does not
+  resend the question. API callers still receive 429 `RATE_LIMITED`.
+
+Tests: `PaidRequestLimitsTest`, extended `AdminAccessFilterTest` and `PaidRequestLimitFilterTest`,
+new `AdminSignInIntegrationTest` (password set: redirect, wrong and right password, cookie flags,
+forged cookie, sign-out, cross-site POST refused, Basic still accepted, limit redirect and page) and
+a limits case in `BootstrapIntegrationTest`; three tests that count migrations or tables were
+updated for V10. Validation: `gradlew check bootJar` passed with 465 unit and 114 integration tests.
+Checked in the browser against a throwaway local database with providers off: sign-in page (wrong
+then right password), admin page with Sign out and the limits form (saved 50), and the limit page
+at desktop and phone width with no horizontal scroll. Not deployed; the first deployment runs V10
+on the Cloud SQL database. Not checked: the sign-in on the live site over HTTPS.
+
+## Rewrites no longer add a question the user did not ask — 2026-11-11
+
+Live test of 20 questions on revision `board-game-master-00043-k2b` (Exploding Kittens 1–10, Ticket
+to Ride 11–20, asked by the project owner in sessions): 19 were answered and passed the support
+review, most in 5.5–8 s; three needed a quote correction (2–4 s more each) and one support review
+took 13 s. The logs do not record accepted answer text, so their correctness rests on the owner's
+reading. The Attack/Nope question was also answered once the five-passage pool reached the answer
+model whole. The 21st request met the per-client limit (`PAID_REQUESTS_PER_CLIENT_PER_HOUR=20`).
+
+"Can I Nope a Defuse?" fell back with `MODEL_INSUFFICIENT_EVIDENCE` although the Nope passage (0.73)
+states it. The rewrite on `gpt-4.1-mini` had turned it into "…can a Nope card be played to cancel or
+interrupt the effect of a Defuse card…? What are the consequences or penalties, if any, of
+attempting to Nope a Defuse card?". The answer step is told the rewrite is what the user means, and
+the rules say nothing about penalties. Two other rewrites gained the same kind of second question
+and still answered. The rewrite prompt told the model to ask about consequences for risk questions;
+it now limits that to questions that themselves ask about risk and requires exactly one question,
+and `ContextualQueryRewriter` keeps only the text up to the first question mark.
+`ContextualQueryRewriterTest` covers both. Validation: `gradlew check bootJar` passed with 450 unit
+and 110 integration tests. Not deployed or retested live.
+
+Still open: the rewriter restates already-standalone questions and adds the game name despite its
+instructions, costing about 1 s per follow-up; quotes that start mid-sentence with a capital letter
+are rejected and retried.
+
 ## Small evidence pools skip relevance selection — 2026-11-11
 
 Live retest of the change below on revision `board-game-master-00041-l87`: the Attack/Nope question
