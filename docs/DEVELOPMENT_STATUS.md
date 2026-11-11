@@ -50,8 +50,13 @@ With evidence review on, relevance selection now runs only when the pool holds m
 `RAG_EVIDENCE_REVIEW_SELECT_ABOVE` passages (default 5, the number an ordinary answer receives; `0`
 always selects). A smaller pool goes to the answer model whole, which saves one model call; the
 cited-answer support review still runs. `EvidenceReviewTest` covers the skip, the boundary and the
-setting's bounds. Validation: 449 unit tests passed; integration tests did not run (Docker was not
-running locally). Not deployed or retested live: whether the answer model answers correctly with all
+setting's bounds.
+
+Java CI failed after PR #34: two `SessionIntegrationTest` cases still required the previous question
+and setup step in the embedded search text, which a clear question no longer carries. That change was
+merged without the integration tests having run locally. Both cases now check that the question is
+embedded alone and that step and conversation context still reach the answer model. Validation:
+`gradlew check bootJar` passed with 449 unit and 110 integration tests. Not deployed or retested live: whether the answer model answers correctly with all
 five passages is unverified. If it still declines, the next suspect is the question's ambiguity
 (it does not say whose Attack is Noped) against the prompt's instructions to decline when unsure.
 

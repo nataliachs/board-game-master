@@ -162,7 +162,10 @@ class SessionIntegrationTest {
         var followup = sessions.ask(id, "How far do I move for that?");
         assertThat(followup.currentSectionKey()).isEqualTo("START");
         assertThat(sessions.current(id).session().completedSections()).isEmpty();
-        verify(embeddings).embed(argThat(q -> q.startsWith("How far do I move for that?") && q.contains("How do I collect a resource?")));
+        // The question alone finds the rule, so the search uses it without the previous question or lesson text
+        // (RuleRetrievalServiceTest covers the padded search for a question that finds nothing alone).
+        verify(embeddings).embed("How far do I move for that?");
+        verify(embeddings, never()).embed(argThat(q -> q.contains("Previous question:")));
         verify(llm).generate(argThat(r -> r.input().contains("How far do I move for that?") && r.input().contains("How do I collect a resource?")
                 && r.input().contains(id.toString()) && r.input().contains("STANDARD") && r.input().contains("START lesson")));
         var history = json(request("GET", path(id) + "/messages", null), 200);
@@ -509,7 +512,9 @@ class SessionIntegrationTest {
         assertThat(setups.current(id).session().setup()).isEqualTo(before.setup());
         assertThat(sessions.current(id).session().stage()).isEqualTo(SessionStage.SETUP);
         verify(llm).generate(argThat(q -> q.input().contains("LAST setup") && q.input().contains("SETUP") && q.instructions().contains("setup instructions are NOT evidence")));
-        verify(embeddings).embed(argThat(q -> q.contains("Current setup step: LAST setup")));
+        // Step context reaches the answer (above); the search uses the question alone when that finds the rule.
+        verify(embeddings).embed("How do I move this?");
+        verify(embeddings, never()).embed(argThat(q -> q.contains("Current setup step:")));
         assertThat(sessions.history(id, null, 100)).hasSize(2);
         doThrow(new LlmException(LlmException.Code.LLM_TIMEOUT, "LLM request timed out")).when(llm).generate(any());
         assertThatThrownBy(() -> sessions.ask(id, "What about now?")).isInstanceOf(LlmException.class);
